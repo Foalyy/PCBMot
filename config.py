@@ -12,6 +12,8 @@ class Config:
         self,
         board_diameter: float,
         hole_diameter: float,
+        board_outer_margin: float,
+        board_inner_margin: float,
         n_phases: int,
         n_slots_per_phase: int,
         n_layers: int,
@@ -39,12 +41,16 @@ class Config:
         svg_profile: str,
     ):
         # Check parameters
+        if hole_diameter + board_inner_margin >= board_diameter - board_outer_margin:
+            raise ValueError("The board diameter is smaller than the hole diameter")
         if n_layers not in [2, 4, 6, 8]:
             raise ValueError("The number of layers must be 2, 4, 6 or 8")
         
         # Save parameters
         self.board_diameter: float = board_diameter
         self.hole_diameter: float = hole_diameter
+        self.board_outer_margin: float = board_outer_margin
+        self.board_inner_margin: float = board_inner_margin
         self.n_phases: int = n_phases
         self.n_slots_per_phase: int = n_slots_per_phase
         self.n_layers: int = n_layers
@@ -76,8 +82,6 @@ class Config:
         self.viewport_height: float = self.board_diameter * 1.1
         self.board_radius: float = self.board_diameter/2
         self.hole_radius: float = self.hole_diameter/2
-        self.board_outer_margin: float = 1.8
-        self.board_inner_margin: float = 1.0
         self.via_diameter_w_spacing: float = self.via_diameter + self.trace_spacing
         self.n_coils: int = self.n_phases * self.n_slots_per_phase
         self.coil_angle: float = 360.0 / self.n_coils

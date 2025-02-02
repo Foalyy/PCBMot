@@ -303,6 +303,8 @@ class Coil:
 
             # Segment to inner right
             point_inner_right = line_right.intersect(arc_inner)
+            if point_inner_right.x < trace_width:
+                break
             segment = Segment(path.end_point, point_inner_right)
             closest_via, distance = Via.closest_in_list(inside_vias.values(), segment)
             if distance < trace_width / 2.0 + trace_spacing: # Collision
@@ -339,11 +341,11 @@ class Coil:
 
             # Reduce the fillet radius for the next loop
             outer_fillet_radius -= loop_offset
-            if outer_fillet_radius < 0.1:
-                outer_fillet_radius = 0.1
+            if outer_fillet_radius < trace_width:
+                outer_fillet_radius = trace_width
             inner_fillet_radius -= loop_offset
-            if inner_fillet_radius < 0.1:
-                inner_fillet_radius = 0.1
+            if inner_fillet_radius < trace_width:
+                inner_fillet_radius = trace_width
             
             # Count the number of turns in the coil
             n_turns += 1
@@ -407,15 +409,18 @@ class Coil:
                     raise ValueError("Cannot find path element to connect to requested inside connection")
             
             # Replace the last element in the path with a corner connected to the target via
-            projected = target_via.center.projected(path.last_geometry())
+            last_element = path.last_geometry()
             replaced_element = path.pop()
+            corner = target_via.center.projected(last_element)
+            if not last_element.contains_point(corner):
+                corner = last_element.midpoint()
             match replaced_element:
                 case PathSegment():
-                    path.append_segment(projected)
-                    path.append_segment(target_via.center, fillet_radius=0.2)
+                    path.append_segment(corner)
+                    path.append_arc(target_via.center, Point.origin().distance(target_via.center), anticlockwise=corner.x >= target_via.center.x, fillet_radius=0.2)
 
                 case PathArc():
-                    path.append_arc(projected, replaced_element.radius, replaced_element.anticlockwise)
+                    path.append_arc(corner, replaced_element.radius, replaced_element.anticlockwise)
                     path.append_segment(target_via.center, fillet_radius=0.15)
 
         # Return the coil based on this path, mirrored relative to the Y axis if anticlockwise
@@ -555,43 +560,49 @@ class PCB:
         ]
 
         # Inside vias
-        # The vias are placed in an optimised diamond shape
-        coil_B_center = Point(0, ((config.board_radius - config.board_outer_margin) + (config.hole_radius + config.board_inner_margin)) / 2.0)
+        # The vias are placed in an optimised diamond shape. If the coil is wider than tall (tangential length > radial length),
+        # keep the base diamond shape on its side with the two vertical vias adjacent to each other. Otherwise, optimise
+        # the shape to fit as many radial lines as possible.
+        coil_center_radius = ((config.board_radius - config.board_outer_margin) + (config.hole_radius + config.board_inner_margin)) / 2.0
+        tangential_length = 2 * math.pi * coil_center_radius * config.coil_angle / 360.
+        radial_length = (config.board_radius - config.board_outer_margin) - (config.hole_radius + config.board_inner_margin)
+        coil_B_center = Point(0, coil_center_radius)
         step = config.trace_width / 10.0
         sep = 0.0
-        while True:
-            # The loop starts with the two vertical vias closest to each other, and the diamond shape is progressively
-            # stretched vertically until the line connecting the inner via and the left via is parallel to the left left.
-            # This ensures that this leaves as much room as possible for the radial traces.
+        if radial_length >= tangential_length:
+            while True:
+                # The loop starts with the two vertical vias closest to each other, and the diamond shape is progressively
+                # stretched vertically until the line connecting the inner via and the left via is parallel to the left left.
+                # This ensures that this leaves as much room as possible for the radial traces.
 
-            # Compute the shape of the diamond
-            sep_test = sep + step
-            inside_outer_via = Via(coil_B_center + Vector(0, (config.via_diameter_w_spacing + sep_test) / 2.0), config.via_diameter, config.via_hole_diameter)
-            inside_inner_via = Via(coil_B_center - Vector(0, (config.via_diameter_w_spacing + sep_test) / 2.0), config.via_diameter, config.via_hole_diameter)
-            c1 = Circle(inside_outer_via.center, config.via_diameter_w_spacing)
-            c2 = Circle(inside_inner_via.center, config.via_diameter_w_spacing)
-            points = c1.intersect(c2)
-            if points is None:
-                # No intersection, the vertical vias are too far appart : this shouldn't happen
-                break
-            if points[0].x < points[1].x:
-                point_left = points[0]
-            else:
-                point_left = points[1]
-            
-            # Compute the cross product between the left line, and the line connecting the inner via and the left via
-            v1 = Line.from_two_points(board_center, Point.polar(-config.coil_angle/2.0, config.board_radius)).unit_vector()
-            v2 = Vector.from_two_points(inside_inner_via.center, point_left)
-            if v1.cross(v2) < 0:
-                # The cross product switched sign : we just passed the parallel
-                break
-            
-            # Make sure there is enough spacing between the horizontal vias
-            inside_via_3 = Via(points[0], config.via_diameter, config.via_hole_diameter)
-            inside_via_4 = Via(points[1], config.via_diameter, config.via_hole_diameter)
-            if inside_via_3.distance(inside_via_4) < config.trace_spacing:
-                break
-            sep = sep_test
+                # Compute the shape of the diamond
+                sep_test = sep + step
+                inside_outer_via = Via(coil_B_center + Vector(0, (config.via_diameter_w_spacing + sep_test) / 2.0), config.via_diameter, config.via_hole_diameter)
+                inside_inner_via = Via(coil_B_center - Vector(0, (config.via_diameter_w_spacing + sep_test) / 2.0), config.via_diameter, config.via_hole_diameter)
+                c1 = Circle(inside_outer_via.center, config.via_diameter_w_spacing)
+                c2 = Circle(inside_inner_via.center, config.via_diameter_w_spacing)
+                points = c1.intersect(c2)
+                if points is None:
+                    # No intersection, the vertical vias are too far appart : this shouldn't happen
+                    break
+                if points[0].x < points[1].x:
+                    point_left = points[0]
+                else:
+                    point_left = points[1]
+                
+                # Compute the cross product between the left line, and the line connecting the inner via and the left via
+                v1 = Line.from_two_points(board_center, Point.polar(-config.coil_angle/2.0, config.board_radius)).unit_vector()
+                v2 = Vector.from_two_points(inside_inner_via.center, point_left)
+                if v1.cross(v2) < 0:
+                    # The cross product switched sign : we just passed the parallel
+                    break
+                
+                # Make sure there is enough spacing between the horizontal vias
+                inside_via_3 = Via(points[0], config.via_diameter, config.via_hole_diameter)
+                inside_via_4 = Via(points[1], config.via_diameter, config.via_hole_diameter)
+                if inside_via_3.distance(inside_via_4) < config.trace_spacing:
+                    break
+                sep = sep_test
         inside_outer_via = Via(coil_B_center + Vector(0, (config.via_diameter_w_spacing + sep) / 2.0), config.via_diameter, config.via_hole_diameter, tag=CoilConnection.INSIDE_OUTER_VIA)
         inside_inner_via = Via(coil_B_center - Vector(0, (config.via_diameter_w_spacing + sep) / 2.0), config.via_diameter, config.via_hole_diameter, tag=CoilConnection.INSIDE_INNER_VIA)
         c1 = Circle(inside_outer_via.center, config.via_diameter_w_spacing)
@@ -807,12 +818,13 @@ class PCB:
 
         # Draw the link traces
         for link in self.links:
-            link.draw_svg(
-                drawing,
-                color = self.config.layers_color.get(link.layer),
-                thickness = link.trace_width,
-                dashes = "none"
-            )
+            if self.config.draw_only_layers is None or link.layer in self.config.draw_only_layers:
+                link.draw_svg(
+                    drawing,
+                    color = self.config.layers_color.get(link.layer),
+                    thickness = link.trace_width,
+                    dashes = "none"
+                )
 
         # Draw the vias
         if self.config.draw_vias:

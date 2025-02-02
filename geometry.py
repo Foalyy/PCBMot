@@ -350,7 +350,7 @@ class Line(DrawableObject):
         """Check if this Line is colinear with the given line"""
         return math.isclose(self.a, other.a) and math.isclose(self.b, other.b)
 
-    def intersect(self, object) -> Point:
+    def intersect(self, object, suppress_warning: bool = False) -> Point:
         """Calculate the intersection Point(s) between this Line and the given object
 
         Supported objects : Line, Circle, Arc.
@@ -361,10 +361,11 @@ class Line(DrawableObject):
         match object:
             case Line():
                 if math.isclose(self.a, object.a):
-                    print("Warning: trying to compute intersection between two parallel or colinear lines")
+                    if not suppress_warning:
+                        print("Warning: trying to compute intersection between two parallel or colinear lines")
                     return None
                 elif math.isinf(object.a):
-                    return object.intersect(self)
+                    return object.intersect(self, suppress_warning)
                 elif math.isinf(self.a):
                     x = object.a * self.b + object.b
                     y = self.b
@@ -389,7 +390,8 @@ class Line(DrawableObject):
                     C = (self.b - object.center.x)**2 + object.center.y**2 - object.radius**2
                 discriminant = B**2 - 4 * A * C
                 if discriminant < 0:
-                    print("Warning: trying to compute intersection between a non-intersecting circle and line")
+                    if not suppress_warning:
+                        print("Warning: trying to compute intersection between a non-intersecting circle and line")
                     return None
                 sqrt_discriminant = math.sqrt(discriminant)
                 if math.isinf(self.a):
@@ -406,7 +408,7 @@ class Line(DrawableObject):
 
             case Arc():
                 circle = Circle(object.center(), object.radius)
-                intersect = self.intersect(circle)
+                intersect = self.intersect(circle, suppress_warning)
                 if intersect is None:
                     return None
                 p1, p2 = intersect
@@ -523,11 +525,20 @@ class Segment(DrawableObject):
             case _:
                 raise TypeError(f"Trying to check colinearity to a Segment on an unsupported object : {type(object)}")
 
+    def contains_point(self, point: Point) -> bool:
+        """Check if the given point is on this Segment"""
+        if point == self.p1 or point == self.p2:
+            return True
+        v1 = self.as_vector()
+        v2 = Vector.from_two_points(self.p1, point)
+        on_line = math.isclose(v1.cross(v2), 0.0, abs_tol=1e-9)
+        return on_line and v1.dot(v2) >= 0 and v2.length() <= v1.length()
+
     def midpoint(self) -> Point:
         """Return the point at the middle of this Segment"""
         return self.p1 + self.as_vector() * 0.5
 
-    def intersect(self, object) -> Point:
+    def intersect(self, object, suppress_warning: bool = False) -> Point:
         """Calculate the intersection Point(s) between this Segment (extrapolated as a Line) and the given object
 
         Supported objects : see Line.
@@ -535,7 +546,7 @@ class Segment(DrawableObject):
         Returns either a single Point, a tuple of two Points, or None if there is no
         intersection between the objects.
         """
-        return self.line().intersect(object)
+        return self.line().intersect(object, suppress_warning)
     
     def offset(self, distance: float) -> Self:
         """Create a new Segment parallel to this Segment separated by the given distance
@@ -603,7 +614,7 @@ class Circle(DrawableObject):
     def __str__(self) -> str:
         return f"Circle(center={self.center}, radius={self.radius})"
 
-    def intersect(self, object) -> Point:
+    def intersect(self, object, suppress_warning: bool = False) -> Point:
         """Calculate the intersection Point between this Circle and the given object
 
         Supported objects : Line, Circle.
@@ -613,17 +624,19 @@ class Circle(DrawableObject):
         """
         match object:
             case Line():
-                return object.intersect(self)
+                return object.intersect(self, suppress_warning)
             
             case Circle():
                 if self.center == object.center and math.isclose(self.radius, object.radius):
                     # Same circles
-                    print("Warning: trying to compute intersection between two identical circles")
+                    if not suppress_warning:
+                        print("Warning: trying to compute intersection between two identical circles")
                     return None
                 distance = math.hypot(object.center.x - self.center.x, object.center.y - self.center.y)
                 if distance > self.radius + object.radius or distance < math.fabs(self.radius - object.radius):
                     # No intersection
-                    print("Warning: trying to compute intersection between non-intersecting circles")
+                    if not suppress_warning:
+                        print("Warning: trying to compute intersection between non-intersecting circles")
                     return None
                 a = (self.radius**2 - object.radius**2 + distance**2) / (2.0 * distance)
                 h = math.sqrt(self.radius**2 - a**2)
@@ -730,6 +743,18 @@ class Arc(DrawableObject):
         v2 = Vector.from_two_points(center, self.p2)
         return acos(v1.dot(v2) / (v1.length() * v2.length()))
 
+    def contains_point(self, point: Point) -> bool:
+        """Check if the given point is on this Arc"""
+        if point == self.p1 or point == self.p2:
+            return True
+        center = self.center()
+        if not math.isclose(center.distance(point), self.radius, abs_tol=1e-9):
+            return False
+        v1 = Vector.from_two_points(center, self.p1)
+        v2 = Vector.from_two_points(center, self.p2)
+        v3 = Vector.from_two_points(center, point)
+        return v3.cross(v1) >= 0 and v1.dot(v3) >= v1.dot(v2)
+
     def midpoint(self) -> Point:
         """Return the point at the middle of this Arc"""
         return self.p1.rotated(self.center(), self.angle() / 2.0)
@@ -768,7 +793,7 @@ class Arc(DrawableObject):
                 closest = other
         return closest
 
-    def intersect(self, object) -> Point:
+    def intersect(self, object, suppress_warning: bool = False) -> Point:
         """Calculate the intersection Point between this Arc and the given object
 
         Supported objects : Line.
@@ -778,7 +803,7 @@ class Arc(DrawableObject):
         """
         match object:
             case Line():
-                return object.intersect(self)
+                return object.intersect(self, suppress_warning)
             case _:
                 raise TypeError(f"Unsupported object given to intersect an Arc : {type(object)}")
     
@@ -791,7 +816,7 @@ class Arc(DrawableObject):
 
         The given distance can be negative to flip the side of the offset.
         """
-        radius_offset = max(self.radius + distance, 0.0)
+        radius_offset = max(self.radius + distance, 0.01)
         center = self.center()
         line1 = Line.from_two_points(center, self.p1)
         line2 = Line.from_two_points(center, self.p2)
@@ -957,6 +982,21 @@ class Fillet:
         attribute on the returned Fillet object if necessary.
         """
 
+        warning_displayed = False
+
+        # Shrink the fillet radius a first time of it larger than the segment or the arc
+        segment_length = p_prev.distance(p_mid)
+        if fillet_radius > segment_length:
+            if not warning_displayed:
+                print("Warning : fillet too big for the given geometry, cutting the fillet")
+                warning_displayed = True
+            fillet_radius = segment_length
+        if fillet_radius > arc_radius:
+            if not warning_displayed:
+                print("Warning : fillet too big for the given geometry, cutting the fillet")
+                warning_displayed = True
+            fillet_radius = arc_radius
+
         # Compute the line and arc adjacent to the mid point
         line_prev = Line.from_two_points(p_prev, p_mid)
         arc_next = Arc(p_mid, p_next, arc_radius, reverse=anticlockwise)
@@ -964,13 +1004,20 @@ class Fillet:
         shrinked = False
         for i in range(3):
             # Compute the center of the fillet by offseting each of the two lines on the direction of the opposite point,
-            # then taking the intersection between them
-            line_prev_offset = p_next.closest([line_prev.offset(fillet_radius), line_prev.offset(-fillet_radius)])
-            arc_next_offset = p_prev.closest([arc_next.offset(fillet_radius), arc_next.offset(-fillet_radius)])
-            fillet_center = line_prev_offset.intersect(arc_next_offset)
-            if fillet_center is None:
-                # TODO : automatically try with a smaller fillet radius
-                print("Warning : fillet too big for the given geometry")
+            # then taking the intersection between them.
+            # If no intersection is found, shrink the fillet until one can be successfully computed.
+            while fillet_radius > 0.0:
+                line_prev_offset = p_next.closest([line_prev.offset(fillet_radius), line_prev.offset(-fillet_radius)])
+                arc_next_offset = p_prev.closest([arc_next.offset(fillet_radius), arc_next.offset(-fillet_radius)])
+                fillet_center = line_prev_offset.intersect(arc_next_offset, suppress_warning=True)
+                if fillet_center is not None:
+                    break
+                else:
+                    if not warning_displayed:
+                        print("Warning : fillet too big for the given geometry")
+                        warning_displayed = True
+                    fillet_radius -= 0.1
+            if math.isclose(fillet_radius, 0.0, abs_tol=1e-9):
                 return None
 
             # Project the center point of the fillet on the adjacent lines to compute the endpoints of the arc of the fillet
@@ -987,7 +1034,9 @@ class Fillet:
             # TODO : replace the 'factor' calculation with something more robust
             if v_fillet_prev.length() >= v_prev.length():
                 # Compute a new pair of fillet endpoints that are inside the prev segment
-                print("Warning : fillet too big for the previous line, cutting the fillet")
+                if not warning_displayed:
+                    print("Warning : fillet too big for the previous line, cutting the fillet")
+                    warning_displayed = True
                 length_1 = v_fillet_prev.length()
                 p_fillet_prev = (p_mid + v_prev * 0.9)
                 v_fillet_prev = Vector.from_two_points(p_mid, p_fillet_prev)
@@ -999,7 +1048,9 @@ class Fillet:
                 shrinked = True
             if arc_fillet_next.length() >= arc_next.length():
                 # Compute a new pair of fillet endpoints that are inside the next arc
-                print("Warning : fillet too big for the next line, cutting the fillet")
+                if not warning_displayed:
+                    print("Warning : fillet too big for the next line, cutting the fillet")
+                    warning_displayed = True
                 length_1 = arc_fillet_next.length()
                 arc_fillet_next = arc_fillet_next * 0.7
                 p_fillet_next = arc_fillet_next.p2
