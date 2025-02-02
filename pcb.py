@@ -67,10 +67,15 @@ class Via:
     def distance(self, object) -> float:
         """Calculate the distance between this Via and the given object
 
-        Supported objects : see Point.distance().
+        Supported objects : Via, and any object supported by Point.distance().
         Throws a TypeError if any other object type is given.
         """
-        return self.center.distance(object) - self.diameter / 2.0
+        match object:
+            case Via():
+                return self.center.distance(object.center) - self.diameter
+
+            case _:
+                return self.center.distance(object) - self.diameter / 2.0
     
     def rotated(self, rotation_center: Self, angle: float) -> Self:
         """Create a copy of this Via rotated around the given center point by the given angle"""
@@ -402,9 +407,43 @@ class PCB:
         ]
 
         # Inside vias
-        # TODO : replace the "sep" parameter with a computation to make the line between via_inner_2 and via_inner_3 parallel to the side
+        # The vias are placed in an optimised diamond shape
         coil_B_center = Point(0, ((config.board_radius - config.board_outer_margin) + (config.hole_radius + config.board_inner_margin)) / 2.0)
-        sep = 0.4
+        step = config.trace_width / 10.0
+        sep = 0.0
+        while True:
+            # The loop starts with the two vertical vias closest to each other, and the diamond shape is progressively
+            # stretched vertically until the line connecting the inner via and the left via is parallel to the left left.
+            # This ensures that this leaves as much room as possible for the radial traces.
+
+            # Compute the shape of the diamond
+            sep_test = sep + step
+            inside_outer_via = Via(coil_B_center + Vector(0, (config.via_diameter_w_spacing + sep_test) / 2.0), config.via_diameter, config.via_hole_diameter)
+            inside_inner_via = Via(coil_B_center - Vector(0, (config.via_diameter_w_spacing + sep_test) / 2.0), config.via_diameter, config.via_hole_diameter)
+            c1 = Circle(inside_outer_via.center, config.via_diameter_w_spacing)
+            c2 = Circle(inside_inner_via.center, config.via_diameter_w_spacing)
+            points = c1.intersect(c2)
+            if points is None:
+                # No intersection, the vertical vias are too far appart : this shouldn't happen
+                break
+            if points[0].x < points[1].x:
+                point_left = points[0]
+            else:
+                point_left = points[1]
+            
+            # Compute the cross product between the left line, and the line connecting the inner via and the left via
+            v1 = Line.from_two_points(board_center, Point.polar(-config.coil_angle/2.0, config.board_radius)).unit_vector()
+            v2 = Vector.from_two_points(inside_inner_via.center, point_left)
+            if v1.cross(v2) < 0:
+                # The cross product switched sign : we just passed the parallel
+                break
+            
+            # Make sure there is enough spacing between the horizontal vias
+            inside_via_3 = Via(points[0], config.via_diameter, config.via_hole_diameter)
+            inside_via_4 = Via(points[1], config.via_diameter, config.via_hole_diameter)
+            if inside_via_3.distance(inside_via_4) < config.trace_spacing:
+                break
+            sep = sep_test
         inside_outer_via = Via(coil_B_center + Vector(0, (config.via_diameter_w_spacing + sep) / 2.0), config.via_diameter, config.via_hole_diameter, tag=CoilConnection.INSIDE_OUTER_VIA)
         inside_inner_via = Via(coil_B_center - Vector(0, (config.via_diameter_w_spacing + sep) / 2.0), config.via_diameter, config.via_hole_diameter, tag=CoilConnection.INSIDE_INNER_VIA)
         c1 = Circle(inside_outer_via.center, config.via_diameter_w_spacing)
