@@ -26,23 +26,23 @@ PRECISION = 10
 class SVGStyle:
     point_color: str = "#C02020"
     point_opacity: float = 0.5
-    point_radius: float = 0.05
+    point_radius: float = 0.15
     point_thickness: float = 0.05
 
     line_color: str = "#37C837"
     line_opacity: float = 0.5
     line_thickness: float = 0.05
-    line_dashes: str = "0.4 0.15"
+    line_dashes: str = "0.2 0.12"
 
     circle_color: str = "#37C837"
     circle_opacity: float = 0.5
     circle_thickness: float = 0.05
-    circle_dashes: str = "0.4 0.15"
+    circle_dashes: str = "0.2 0.12"
 
     arc_color: str = "#37C837"
     arc_opacity: float = 0.5
     arc_thickness: float = 0.05
-    arc_dashes = "0.4 0.15"
+    arc_dashes = "0.2 0.12"
 
     path_color: str = "#0044AA"
     path_opacity: float = 0.5
@@ -77,6 +77,9 @@ def atan2(y: float, x: float) -> float:
 
 ## Geometry classes
 
+class DrawableObject:
+    pass
+
 class Vector:
     """A 2D vector defined by its X and Y components"""
 
@@ -104,7 +107,7 @@ class Vector:
         return math.isclose(self.x, other.x) and math.isclose(self.y, other.y)
     
     def from_two_points(p1: "Point", p2: "Point") -> Self:
-        """Create a new Vector based on p1 going to p2"""
+        """Create a new Vector based on p1 pointing to p2"""
         return Vector(p2.x - p1.x, p2.y - p1.y)
 
     def polar(a: float, r: float) -> Self:
@@ -140,7 +143,7 @@ class Vector:
         return self.x * other.y - other.x * self.y
 
 
-class Point(Vector):
+class Point(Vector, DrawableObject):
     """A point on the 2D plane, based on the Vector class"""
 
     def __str__(self) -> str:
@@ -171,7 +174,7 @@ class Point(Vector):
     def distance(self, object) -> float:
         """Calculate the distance between this Point and the given object
 
-        Supported objects : Point, Line, Circle, Arc (extrapolated as a circle).
+        Supported objects : Point, Line, Segment (extrapolated as a line), Circle, Arc (extrapolated as a circle).
         Throws a TypeError if any other object type is given.
         """
         match object:
@@ -184,6 +187,9 @@ class Point(Vector):
                 else:
                     return math.fabs(object.a * self.y - self.x + object.b) / math.sqrt(1 + object.a**2)
             
+            case Segment():
+                return self.distance(object.line())
+            
             case Circle():
                 return math.fabs(self.distance(object.center) - object.radius)
             
@@ -194,7 +200,7 @@ class Point(Vector):
                 raise TypeError(f"Trying to compute the distance between a Point and an unsupported object : {type(object)}")
     
     def closest(self, objects: list) -> Self:
-        """Return the object in the given list that is closest to this Point.
+        """Return the object in the given list that is closest to this Point
 
         See distance() for the list of supported objects.
         The given objects do not need to be of the same type as long as they are
@@ -227,12 +233,16 @@ class Point(Vector):
     def projected(self, object) -> Self:
         """Create a copy of this Point projected on the given object
 
-        Supported objects : Line, Circle, Arc (extrapolated as a circle).
+        Supported objects : Line, Segment, Circle, Arc (extrapolated as a circle).
         Throws a TypeError if any other object type is given.
         """
         match object:
             case Line():
                 return object.intersect(object.perpendicular(self))
+
+            case Segment():
+                line = object.line()
+                return line.intersect(line.perpendicular(self))
             
             case Circle():
                 projection_line = Line.from_two_points(object.center, self)
@@ -244,6 +254,13 @@ class Point(Vector):
 
             case _:
                 raise TypeError(f"Trying to project a Point on an unsupported object : {type(object)}")
+    
+    def offset(self, along_line: "Line", distance: float) -> Self:
+        """Create a new Point along the given Line separated by the given distance
+
+        The given distance can be negative to flip the side of the offset.
+        """
+        return self + along_line.unit_vector() * distance
 
     def to_viewport(self) -> Self:
         return Vector(round(self.x, PRECISION), round(-self.y, PRECISION))
@@ -265,7 +282,7 @@ class Point(Vector):
         return self
 
 
-class Line:
+class Line(DrawableObject):
     """A line on the 2D plane represented by the following equation `x = a * y + b`
 
     Note that this is different to the more common `y = a * x + b`.
@@ -298,6 +315,24 @@ class Line:
             a = (p1.x - p2.x) / (p1.y - p2.y)
             b = p1.x - a * p1.y
         return Line(a, b)
+    
+    def horizontal(y: float) -> Self:
+        """Create a new horizontal line at the given Y position"""
+        return Line(math.inf, y)
+    
+    def unit_vector(self) -> Vector:
+        """Return a new Vector of length 1 parallel to this line
+        
+        The direction of the vector is not guaranteed.
+        """
+        
+        if math.isinf(self.a):
+            # Horizontal line
+            return Vector(1.0, 0.0)
+        else:
+            p1 = Point(self.eval(0), 0)
+            p2 = self.intersect(Circle(p1, 1.0))[0]
+            return Vector.from_two_points(p1, p2)
     
     def angle(self) -> float:
         """Return the angle of this Line in the range [-90°:90°] relative to the vertical axis"""
@@ -417,15 +452,19 @@ class Line:
         
         This method returns self and can therefore be chained."""
 
+        # Assume a sufficiently large viewport to cover most cases
+        viewport_width = 1000
+        viewport_height = 1000
+
         if math.isinf(self.a):
-            x1 = -VIEWPORT_WIDTH/2.0
-            x2 = VIEWPORT_WIDTH/2.0
+            x1 = -viewport_width/2.0
+            x2 = viewport_width/2.0
             y = self.b
             p1 = (round(x1, PRECISION), round(-y, PRECISION))
             p2 = (round(x2, PRECISION), round(-y, PRECISION))
         else:
-            y1 = -VIEWPORT_HEIGHT/2.0
-            y2 = VIEWPORT_HEIGHT/2.0
+            y1 = -viewport_height/2.0
+            y2 = viewport_height/2.0
             p1 = (round(self.eval(y1), PRECISION), round(-y1, PRECISION))
             p2 = (round(self.eval(y2), PRECISION), round(-y2, PRECISION))
         
@@ -439,8 +478,122 @@ class Line:
         return self
 
 
-class Circle:
-    """A 2D Circle represented by its center and radius"""
+class Segment(DrawableObject):
+    """A 2D line segment represented by two endpoints"""
+
+    def __init__(self, p1: Point, p2: Point):
+        self.p1: Point = p1
+        self.p2: Point = p2
+    
+    def line(self) -> Line:
+        """Return the Line colinear to this segment, losing the endpoints information"""
+        return Line.from_two_points(self.p1, self.p2)
+    
+    def as_vector(self) -> Vector:
+        """Return the Vector going from p1 pointing to p2"""
+        return Vector.from_two_points(self.p1, self.p2)
+
+    def angle(self) -> float:
+        """Return the angle of this Segment in the range [-90°:90°] relative to the vertical axis"""
+        return self.line().angle()
+    
+    def is_parallel(self, other: Self) -> bool:
+        """Check if this Segment is parallel with the given Segment or Line"""
+        match other:
+            case Segment():
+                return self.line().is_parallel(other.line())
+
+            case Line():
+                return self.line().is_parallel(other)
+
+            case _:
+                raise TypeError(f"Trying to check parallelism to a Segment on an unsupported object : {type(object)}")
+                
+    
+    def is_colinear(self, other: Self) -> bool:
+        """Check if this Segment is colinear with the given Segment or Line"""
+        match other:
+            case Segment():
+                return self.line().is_colinear(other.line())
+
+            case Line():
+                return self.line().is_colinear(other)
+
+            case _:
+                raise TypeError(f"Trying to check colinearity to a Segment on an unsupported object : {type(object)}")
+
+    def midpoint(self) -> Point:
+        """Return the point at the middle of this Segment"""
+        return self.p1 + self.as_vector() * 0.5
+
+    def intersect(self, object) -> Point:
+        """Calculate the intersection Point(s) between this Segment (extrapolated as a Line) and the given object
+
+        Supported objects : see Line.
+        Throws a TypeError if any other object type is given.
+        Returns either a single Point, a tuple of two Points, or None if there is no
+        intersection between the objects.
+        """
+        return self.line().intersect(object)
+    
+    def offset(self, distance: float) -> Self:
+        """Create a new Segment parallel to this Segment separated by the given distance
+
+        The given distance can be negative to flip the side of the offset.
+        """
+        p1_offset = self.p1.offset(self.line().perpendicular(self.p1), distance)
+        p2_offset = self.p2 + Vector.from_two_points(self.p1, p1_offset)
+        return Segment(p1_offset, p2_offset)
+
+    def tangent_arc_through_point(self, point: Point, at_start: bool = False) -> "Arc":
+        """Return an Arc tangeant to this Segment at one of its endpoint that passes through the given Point
+
+        By default, the new Arc is placed at the end of the current Segment, except if `at_start` is set.
+        """
+        if at_start:
+            p1 = self.p1 # Start the new arc at the start of the segment
+            opposite_point = self.p2
+        else:
+            p1 = self.p2 # Start the new arc at the end of the segment
+            opposite_point = self.p1
+        p2 = point
+        if p1 == p2:
+            # The endpoint of the segment and the target point are coincident, the arc would be empty
+            return None
+        v1 = Vector.from_two_points(opposite_point, p1)
+        v2 = Vector.from_two_points(p1, p2)
+        dot_product = v1.dot(v2)
+        if dot_product < 0:
+            # The target point is behind the endpoint of the segment, it is not possible to draw an arc
+            # tangeant to the segment that would pass by the given point
+            return None
+        cross_product = v1.cross(v2)
+        if math.isclose(cross_product, 0.0, abs_tol=1e-9):
+            # The target point is coincident with the segment, the result would be a line
+            # TODO : allow the Arc to have a radius=math.inf for these cases?
+            return None
+        segment = Segment(p1, p2)
+        midline = segment.line().perpendicular(segment.midpoint())
+        center = self.line().perpendicular(p1).intersect(midline)
+        radius = center.distance(p1)
+        return Arc(p1, p2, radius, cross_product > 0)
+    
+    def draw_svg(self, drawing: svg.Drawing, color=None, opacity=None, thickness=None, dashes=None):
+        """Draw this Segment on the given SVG drawing
+        
+        This method returns self and can therefore be chained."""
+
+        drawing.add(drawing.line(
+            self.p1.to_viewport().as_tuple(), self.p2.to_viewport().as_tuple(),
+            stroke = color or style.line_color,
+            stroke_opacity = opacity or style.line_opacity,
+            stroke_width = thickness or style.line_thickness,
+            stroke_dasharray = dashes or style.line_dashes,
+        ))
+        return self
+
+class Circle(DrawableObject):
+    """A 2D circle represented by its center and radius"""
 
     def __init__(self, center: Point, radius: float):
         self.center: Point = center
@@ -515,7 +668,7 @@ class Circle:
         return self
 
 
-class Arc:
+class Arc(DrawableObject):
     """A 2D Arc represented by its two endpoints and its radius
 
     The arc always go clockwise from p1 to p2.
@@ -553,13 +706,21 @@ class Arc:
         """Calculate the center Point of this Arc"""
         circle1 = Circle(self.p1, self.radius)
         circle2 = Circle(self.p2, self.radius)
-        c0, c1 = circle1.intersect(circle2)
-        v1 = Vector.from_two_points(c0, self.p1)
-        v2 = Vector.from_two_points(c0, self.p2)
-        if v1.cross(v2) > 0:
-            return c1
-        else:
-            return c0
+        intersect = circle1.intersect(circle2)
+        match intersect:
+            case None:
+                raise ValueError(f"Cannot calculate the center of arc p1={self.p1} p2={self.p2} r={self.radius}")
+            
+            case Point():
+                return intersect
+            
+            case [c0, c1]:
+                v1 = Vector.from_two_points(c0, self.p1)
+                v2 = Vector.from_two_points(c0, self.p2)
+                if v1.cross(v2) > 0:
+                    return c1
+                else:
+                    return c0
 
     def angle(self) -> float:
         """Calculate the angle of this Arc"""
@@ -568,9 +729,43 @@ class Arc:
         v2 = Vector.from_two_points(center, self.p2)
         return acos(v1.dot(v2) / (v1.length() * v2.length()))
 
+    def midpoint(self) -> Point:
+        """Return the point at the middle of this Arc"""
+        return self.p1.rotated(self.center(), self.angle() / 2.0)
+
     def length(self) -> float:
         """Calculate the curve length of this Arc"""
         return math.pi * self.radius * self.angle() / 180.
+    
+    def distance(self, object) -> float:
+        """Calculate the distance between this Arc and the given object
+
+        Supported objects : Point.
+        Throws a TypeError if any other object type is given.
+        """
+        match object:
+            case Point():
+                return object.distance(self)
+
+            case _:
+                raise TypeError(f"Trying to compute the distance between a Point and an unsupported object : {type(object)}")
+    
+    def closest(self, objects: list) -> Self:
+        """Return the object in the given list that is closest to this Arc
+
+        See distance() for the list of supported objects.
+        The given objects do not need to be of the same type as long as they are
+        each of one of the supported types.
+        Throws a TypeError if any other object type is given.
+        """
+        min_distance = 0.0
+        closest = None
+        for other in objects:
+            distance = self.distance(other)
+            if closest is None or distance < min_distance:
+                min_distance = distance
+                closest = other
+        return closest
 
     def intersect(self, object) -> Point:
         """Calculate the intersection Point between this Arc and the given object
@@ -603,6 +798,40 @@ class Arc:
         p1_offset = self.p1.closest(line1.intersect(circle))
         p2_offset = self.p2.closest(line2.intersect(circle))
         return Arc(p1_offset, p2_offset, radius_offset)
+
+    def tangent_arc_through_point(self, point: Point, at_start: bool = False) -> Self:
+        """Return an Arc tangeant to this Arc at one of its endpoint that passes through the given Point
+
+        By default, the new Arc is placed at the end of the current Arc, except if `at_start` is set.
+        """
+        if at_start:
+            p1 = self.p1 # Start the new arc at the start of the current arc
+            opposite_point = self.p2
+        else:
+            p1 = self.p2 # Start the new arc at the end of the current arc
+            opposite_point = self.p1
+        p2 = point
+        if p1 == p2:
+            # The endpoint of the current arc and the target point are coincident, the new arc would be empty
+            return None
+        line = Line.from_two_points(self.center(), p1).perpendicular(p1)
+        p_segment = opposite_point.closest(line.intersect(Circle(p1, 1.0)))
+        tangent_segment = Segment(p_segment, p1)
+        v1 = Vector.from_two_points(p_segment, p1)
+        v2 = Vector.from_two_points(p1, p2)
+        dot_product = v1.dot(v2)
+        if dot_product < 0:
+            # The target point is behind the endpoint of the current arc, cannot calculate a new arc tangeant to the end of this arc
+            return None
+        cross_product = v1.cross(v2)
+        if math.isclose(cross_product, 0.0, abs_tol=1e-9):
+            # The target point is coincident with the line tangeant at the end of the arc, cannot calculate a finite arc
+            return None
+        segment = Segment(p1, p2)
+        midline = segment.line().perpendicular(segment.midpoint())
+        center = line.perpendicular(p1).intersect(midline)
+        radius = center.distance(p1)
+        return Arc(p1, p2, radius, cross_product > 0)
     
     def draw_svg(self, drawing: svg.Drawing, color=None, opacity=None, thickness=None, dashes=None):
         """Draw this Arc on the given SVG drawing
@@ -826,71 +1055,73 @@ class PathElement:
 class PathSegment(PathElement):
     """A segment as part of a Path"""
 
-    def __init__(self, end_point: Point):
+    def __init__(self, end_point: Point, tag = None):
         self.p2: Point = end_point
+        self.tag = tag
 
     def __str__(self) -> str:
         return f"PathSegment(p2={self.p2})"
     
     def rotated(self, center: Self, angle: float) -> Self:
         """Create a copy of this PathSegment rotated around the given center point by the given angle"""
-        return PathSegment(self.p2.rotated(center, angle))
+        return PathSegment(self.p2.rotated(center, angle), self.tag)
     
     def mirrored_x(self) -> Self:
         """Create a copy of this PathSegment mirrored about the X axis"""
-        return PathSegment(self.p2.mirrored_x())
+        return PathSegment(self.p2.mirrored_x(), self.tag)
     
     def mirrored_y(self) -> Self:
         """Create a copy of this PathSegment mirrored about the Y axis"""
-        return PathSegment(self.p2.mirrored_y())
+        return PathSegment(self.p2.mirrored_y(), self.tag)
 
 class PathArc(PathElement):
     """An arc segment as part of a Path"""
 
-    def __init__(self, end_point: Point, radius: float, anticlockwise: bool):
+    def __init__(self, end_point: Point, radius: float, anticlockwise: bool, tag = None):
         self.p2: Point = end_point
         self.radius: Point = radius
         self.anticlockwise: Point = anticlockwise
+        self.tag = tag
 
     def __str__(self) -> str:
         return f"PathArc(p2={self.p2}, radius={self.radius}, anticlockwise={self.anticlockwise})"
     
     def rotated(self, center: Self, angle: float) -> Self:
         """Create a copy of this PathArc rotated around the given center point by the given angle"""
-        return PathArc(self.p2.rotated(center, angle), self.radius, self.anticlockwise)
+        return PathArc(self.p2.rotated(center, angle), self.radius, self.anticlockwise, self.tag)
     
     def mirrored_x(self) -> Self:
         """Create a copy of this PathArc mirrored about the X axis"""
-        return PathArc(self.p2.mirrored_x(), self.radius, not self.anticlockwise)
+        return PathArc(self.p2.mirrored_x(), self.radius, not self.anticlockwise, self.tag)
     
     def mirrored_y(self) -> Self:
         """Create a copy of this PathArc mirrored about the Y axis"""
-        return PathArc(self.p2.mirrored_y(), self.radius, not self.anticlockwise)
+        return PathArc(self.p2.mirrored_y(), self.radius, not self.anticlockwise, self.tag)
 
 class Path:
     """A Path consisting of a list of connected segments and arcs"""
 
-    def __init__(self, start: Point):
-        self.start: Point = start
+    def __init__(self, start_point: Point):
+        self.start_point: Point = start_point
+        self.end_point: Point = start_point
         self.elements: list[PathElement] = []
-        self.current_point: Point = start
     
     def previous_point(self, n: int) -> Point:
         if n < 0:
             return None
         if n == 0:
-            return self.current_point
+            return self.end_point
         elif n < len(self.elements):
             return self.elements[-(n+1)].p2
         elif n == len(self.elements):
-            return self.start
+            return self.start_point
         else:
             return None
     
-    def append_segment(self, to_point: Point, fillet_radius: float = None):
+    def append_segment(self, to_point: Point, fillet_radius: float = None, tag = None):
         """Append a new segment at the end of this Path, with an optional fillet"""
 
-        if to_point == self.current_point:
+        if to_point == self.end_point:
             return
         
         # Fillet between this segment and the previous element in the path
@@ -899,7 +1130,7 @@ class Path:
         if fillet_radius:
             # Get the three points adjacent to the current point
             p_prev = self.previous_point(1)
-            p_mid = self.current_point
+            p_mid = self.end_point
             p_next = to_point
             last_element = self.elements[-1]
             match last_element:
@@ -910,28 +1141,65 @@ class Path:
                     if fillet is not None:
                         # Replace the last segment with the fillet
                         self.elements.pop()
-                        self.elements.append(PathSegment(fillet.p_arc_prev))
-                        self.elements.append(PathArc(fillet.p_arc_next, fillet.fillet_radius, fillet.anticlockwise_arc))
-                        self.current_point = fillet.p_arc_next
+                        self.elements.append(PathSegment(fillet.p_arc_prev, tag=last_element.tag))
+                        self.elements.append(PathArc(fillet.p_arc_next, fillet.fillet_radius, fillet.anticlockwise_arc, tag))
+                        self.end_point = fillet.p_arc_next
                 
                 case PathArc():
                     # Compute the fillet
                     fillet = Fillet.arc_to_segment(p_prev, p_mid, p_next, last_element.radius, last_element.anticlockwise, fillet_radius)
 
                     if fillet is not None:
-                        # Replace the last segment with the fillet
+                        # Replace the last arc with the fillet
                         self.elements.pop()
-                        self.elements.append(PathArc(fillet.p_arc_prev, last_element.radius, last_element.anticlockwise))
-                        self.elements.append(PathArc(fillet.p_arc_next, fillet.fillet_radius, fillet.anticlockwise_arc))
-                        self.current_point = fillet.p_arc_next
+                        self.elements.append(PathArc(fillet.p_arc_prev, last_element.radius, last_element.anticlockwise, tag=last_element.tag))
+                        self.elements.append(PathArc(fillet.p_arc_next, fillet.fillet_radius, fillet.anticlockwise_arc, tag))
+                        self.end_point = fillet.p_arc_next
 
-        self.elements.append(PathSegment(to_point))
-        self.current_point = to_point
+        self.elements.append(PathSegment(to_point, tag))
+        self.end_point = to_point
     
-    def append_arc(self, to_point: Point, radius: float, anticlockwise: bool, fillet_radius: float = None):
+    def prepend_segment(self, to_point: Point, fillet_radius: float = None, tag = None):
+        """Append a new segment at the beginning of this Path, with an optional fillet"""
+
+        if to_point == self.end_point:
+            return
+        
+        # Fillet between this segment and the next element in the path
+        if not self.elements:
+            fillet_radius = None
+        if fillet_radius:
+            # Get the three points adjacent to the current point
+            p_prev = to_point
+            p_mid = self.start_point
+            p_next = self.elements[0].p2
+            first_element = self.elements[0]
+            match first_element:
+                case PathSegment():
+                    # Compute the fillet
+                    fillet = Fillet.segment_to_segment(p_prev, p_mid, p_next, fillet_radius)
+
+                    if fillet is not None:
+                        # Add the fillet at the beginning of the path
+                        self.elements.insert(0, PathArc(fillet.p_arc_next, fillet.fillet_radius, fillet.anticlockwise_arc, tag))
+                        self.start_point = fillet.p_arc_prev
+                
+                case PathArc():
+                    # Compute the fillet
+                    fillet = Fillet.arc_to_segment(p_prev, p_mid, p_next, first_element.radius, first_element.anticlockwise, fillet_radius)
+
+                    if fillet is not None:
+                        # Add the fillet at the beginning of the path
+                        self.elements.insert(0, PathArc(fillet.p_arc_next, fillet.fillet_radius, fillet.anticlockwise_arc, tag))
+                        self.start_point = fillet.p_arc_prev
+
+        self.elements.insert(0, PathSegment(self.start_point, tag))
+        self.start_point = to_point
+    
+    def append_arc(self, to_point: Point, radius: float, anticlockwise: bool, fillet_radius: float = None, tag = None):
         """Append a new arc of the given radius at the end of this Path, with an optional fillet"""
 
-        if to_point == self.current_point:
+        if to_point == self.end_point:
             return
 
         # Fillet between this arc and the previous element in the path
@@ -940,7 +1208,7 @@ class Path:
         if fillet_radius:
             # Get the three points adjacent to the current point
             p_prev = self.previous_point(1)
-            p_mid = self.current_point
+            p_mid = self.end_point
             p_next = to_point
             last_element = self.elements[-1]
             match last_element:
@@ -951,47 +1219,114 @@ class Path:
                     if fillet is not None:
                         # Replace the last segment with the fillet
                         self.elements.pop()
-                        self.elements.append(PathSegment(fillet.p_arc_prev))
-                        self.elements.append(PathArc(fillet.p_arc_next, fillet.fillet_radius, fillet.anticlockwise_arc))
-                        self.current_point = fillet.p_arc_next
+                        self.elements.append(PathSegment(fillet.p_arc_prev, tag=last_element.tag))
+                        self.elements.append(PathArc(fillet.p_arc_next, fillet.fillet_radius, fillet.anticlockwise_arc, tag))
+                        self.end_point = fillet.p_arc_next
                 
                 case PathArc():
                     raise ValueError("Fillet between two arcs is not supported")
 
-        self.elements.append(PathArc(to_point, radius, anticlockwise))
-        self.current_point = to_point
+        self.elements.append(PathArc(to_point, radius, anticlockwise, tag))
+        self.end_point = to_point
     
+    def prepend_arc(self, to_point: Point, radius: float, anticlockwise: bool, fillet_radius: float = None, tag = None):
+        """Append a new arc of the given radius at the beginning of this Path, with an optional fillet"""
+
+        if to_point == self.end_point:
+            return
+
+        # Fillet between this arc and the previous element in the path
+        if not self.elements:
+            fillet_radius = None
+        if fillet_radius:
+            # Get the three points adjacent to the current point
+            p_prev = to_point
+            p_mid = self.start_point
+            p_next = self.elements[0].p2
+            first_element = self.elements[0]
+            match first_element:
+                case PathSegment():
+                    # Compute the fillet
+                    fillet = Fillet.segment_to_arc(p_prev, p_mid, p_next, radius, anticlockwise, fillet_radius)
+
+                    if fillet is not None:
+                        # Add the fillet at the beginning of the path
+                        self.elements.insert(0, PathArc(fillet.p_arc_next, fillet.fillet_radius, fillet.anticlockwise_arc, tag))
+                        self.start_point = fillet.p_arc_prev
+                
+                case PathArc():
+                    raise ValueError("Fillet between two arcs is not supported")
+
+        self.elements.insert(0, PathArc(self.start_point, radius, anticlockwise, tag))
+        self.start_point = to_point
+    
+    def first(self) -> PathElement:
+        return self.elements[0]
+    
+    def first_geometry(self) -> Segment|Arc:
+        first = self.elements[0]
+        p1 = self.start_point
+        p2 = first.p2
+        match first:
+            case PathSegment():
+                return Segment(p1, p2)
+
+            case PathArc():
+                return Arc(p1, p2, first.radius, first.anticlockwise)
+    
+    def pop_first(self) -> PathElement:
+        first = self.elements.pop(0)
+        self.start_point = first.p2
+        return first
+    
+    def last(self) -> PathElement:
+        return self.elements[-1]
+    
+    def last_geometry(self) -> Segment|Arc:
+        last = self.elements[-1]
+        p1 = self.elements[-2].p2
+        p2 = last.p2
+        match last:
+            case PathSegment():
+                return Segment(p1, p2)
+
+            case PathArc():
+                return Arc(p1, p2, last.radius, last.anticlockwise)
+    
+    def pop(self) -> PathElement:
+        return self.elements.pop()
+
     def rotated(self, center: Self, angle: float) -> Self:
         """Create a copy of this Path rotated around the given center point by the given angle"""
-        start = self.start.rotated(center, angle)
+        start = self.start_point.rotated(center, angle)
         path = Path(start)
         for element in self.elements:
             path.elements.append(element.rotated(center, angle))
-        path.current_point = self.current_point.rotated(center, angle)
+        path.end_point = self.end_point.rotated(center, angle)
         return path
     
     def mirrored_x(self) -> Self:
         """Create a copy of this Path mirrored about the X axis"""
-        start = self.start.mirrored_x()
+        start = self.start_point.mirrored_x()
         path = Path(start)
         for element in self.elements:
             path.elements.append(element.mirrored_x())
-        path.current_point = self.current_point.mirrored_x()
+        path.end_point = self.end_point.mirrored_x()
         return path
     
     def mirrored_y(self) -> Self:
         """Create a copy of this Path mirrored about the Y axis"""
-        start = self.start.mirrored_y()
+        start = self.start_point.mirrored_y()
         path = Path(start)
         for element in self.elements:
             path.elements.append(element.mirrored_y())
-        path.current_point = self.current_point.mirrored_y()
+        path.end_point = self.end_point.mirrored_y()
         return path
 
     def to_svg(self) -> str:
         d = ""
-        d += f"M{self.start.to_svg()} "
-        current_point = self.start
+        d += f"M{self.start_point.to_svg()} "
+        current_point = self.start_point
         for element in self.elements:
             match element:
                 case PathSegment():

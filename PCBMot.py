@@ -9,10 +9,16 @@ SVG_FILENAME = 'example.svg'
 config = Config(
     board_diameter = 23, # mm
     hole_diameter = 4, # mm
+    n_layers = 8,
+    max_turns_per_layer = None,
     trace_width = 0.1, # mm
     trace_spacing = 0.1, # mm
+    via_diameter = 0.45, # mm
+    via_hole_diameter = 0.3, # mm
     n_phases = 3,
     n_slots_per_phase = 2,
+    draw_construction_geometry = True,
+    only_layers = None,
 )
 
 # Create the PCB
@@ -21,7 +27,7 @@ pcb = PCB.generate(config)
 # Create an SVG drawing
 dwg = svg.Drawing(
     SVG_FILENAME,
-    size=("800px", "800px"),
+    size=("1000px", "1000px"),
     viewBox=f"{-config.viewport_width/2.0} {-config.viewport_height/2.0} {config.viewport_width} {config.viewport_height}",
     profile='tiny',
     fill="none",
@@ -38,7 +44,7 @@ dwg.add(dwg.rect( # Background
 ))
 
 # Draw the PCB
-pcb.draw_svg(dwg, construction_geometry=True)
+pcb.draw_svg(dwg)
 
 # Save the final SVG file
 dwg.save()

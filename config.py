@@ -4,17 +4,34 @@ class Config:
         self,
         board_diameter: float,
         hole_diameter: float,
+        n_layers: int,
+        max_turns_per_layer: int,
         trace_width: float,
         trace_spacing: float,
+        via_diameter: float,
+        via_hole_diameter: float,
         n_phases: int,
         n_slots_per_phase: int,
+        draw_construction_geometry: bool,
+        only_layers: list[str],
     ):
+        # Check parameters
+        if n_layers not in [2, 4, 6, 8]:
+            raise ValueError("The number of layers must be 2, 4, 6 or 8")
+        
+        # Save parameters
         self.board_diameter: float = board_diameter
         self.hole_diameter: float = hole_diameter
+        self.n_layers: int = n_layers
+        self.max_turns_per_layer: int = max_turns_per_layer
         self.trace_width: float = trace_width
         self.trace_spacing: float = trace_spacing
+        self.via_diameter: float = via_diameter
+        self.via_hole_diameter: float = via_hole_diameter
         self.n_phases: int = n_phases
         self.n_slots_per_phase: int = n_slots_per_phase
+        self.draw_construction_geometry: bool = draw_construction_geometry
+        self.only_layers: list[str] = only_layers
 
         # Computed parameters
         self.viewport_width: float = self.board_diameter * 1.1
@@ -23,6 +40,7 @@ class Config:
         self.hole_radius: float = self.hole_diameter/2
         self.board_outer_margin: float = 1.8
         self.board_inner_margin: float = 1.0
+        self.via_diameter_w_spacing: float = self.via_diameter + self.trace_spacing
         self.n_coils: int = self.n_phases * self.n_slots_per_phase
         self.coil_angle: float = 360.0 / self.n_coils
 
@@ -43,3 +61,5 @@ class Config:
             'in6': "#28CCD9",
             'outline': "#D0D2CD",
         }
+        self.via_color = "#ECECEC"
+        self.via_hole_color = "#E3B72E"
