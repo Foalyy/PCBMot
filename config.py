@@ -10,10 +10,14 @@ class Config:
         trace_spacing: float,
         via_diameter: float,
         via_hole_diameter: float,
+        outer_vias_offset: float,
+        inner_vias_offset: float,
         n_phases: int,
         n_slots_per_phase: int,
+        draw_vias: bool,
+        draw_terminals: bool,
         draw_construction_geometry: bool,
-        only_layers: list[str],
+        draw_only_layers: list[str],
     ):
         # Check parameters
         if n_layers not in [2, 4, 6, 8]:
@@ -27,11 +31,15 @@ class Config:
         self.trace_width: float = trace_width
         self.trace_spacing: float = trace_spacing
         self.via_diameter: float = via_diameter
+        self.outer_vias_offset: float = outer_vias_offset
+        self.inner_vias_offset: float = inner_vias_offset
         self.via_hole_diameter: float = via_hole_diameter
         self.n_phases: int = n_phases
         self.n_slots_per_phase: int = n_slots_per_phase
+        self.draw_vias: bool = draw_vias
+        self.draw_terminals: bool = draw_terminals
         self.draw_construction_geometry: bool = draw_construction_geometry
-        self.only_layers: list[str] = only_layers
+        self.draw_only_layers: list[str] = draw_only_layers
 
         # Computed parameters
         self.viewport_width: float = self.board_diameter * 1.1

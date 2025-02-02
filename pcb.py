@@ -70,7 +70,7 @@ class Via:
         Supported objects : see Point.distance().
         Throws a TypeError if any other object type is given.
         """
-        return self.center.distance(object) - self.diameter
+        return self.center.distance(object) - self.diameter / 2.0
     
     def rotated(self, rotation_center: Self, angle: float) -> Self:
         """Create a copy of this Via rotated around the given center point by the given angle"""
@@ -134,7 +134,8 @@ class Coil:
             outer_radius: float,
             inner_radius: float,
             anticlockwise: bool,
-            loop_offset: float,
+            trace_width: float,
+            trace_spacing: float,
             outside_vias: dict[CoilConnection, Via],
             inside_vias: dict[CoilConnection, Via],
             outside_connection: CoilConnection,
@@ -150,11 +151,41 @@ class Coil:
             outside_connection = CoilConnection.mirrored_y(outside_connection)
             inside_connection = CoilConnection.mirrored_y(inside_connection)
 
+        # Distance between the centerline of each adjacent coil turn
+        loop_offset = trace_spacing + trace_width
+        
+        # Calculate the best outer and inner fillet radii of the outermost coil turn to fit the vias
+        # Twice the trace width is a sane value to start for any track width
+        outer_fillet_radius = trace_width * 2
+        inner_fillet_radius = trace_width * 2
+        outer_via = outside_vias[CoilConnection.OUTSIDE_OUTER_RIGHT_VIA]
+        inner_via = outside_vias[CoilConnection.OUTSIDE_INNER_RIGHT_VIA]
+        construction_line_right = Line.from_two_points(Point.origin(), Point.polar(angle/2.0, outer_radius)).offset(-loop_offset * 0.5)
+        construction_arc_outer = Arc(Point.polar(-angle/2.0, outer_radius), Point.polar(angle/2.0, outer_radius), outer_radius)
+        construction_arc_inner = Arc(Point.polar(-angle/2.0, inner_radius), Point.polar(angle/2.0, inner_radius), inner_radius)
+        construction_point_outer = construction_line_right.intersect(construction_arc_outer)
+        construction_point_inner = construction_line_right.intersect(construction_arc_inner)
+        start_point = construction_arc_outer.midpoint()
+        end_point = construction_arc_inner.midpoint()
+        while outer_fillet_radius < outer_radius and inner_fillet_radius < inner_radius:
+            path = Path(start_point)
+            path.append_arc(construction_point_outer, outer_radius, anticlockwise=False)
+            path.append_segment(construction_point_inner, fillet_radius=outer_fillet_radius)
+            outer_fillet = Arc(path.elements[-3].p2, path.elements[-2].p2, radius=outer_fillet_radius)
+            path.append_arc(end_point, inner_radius, anticlockwise=True, fillet_radius=inner_fillet_radius)
+            inner_fillet = Arc(path.elements[-3].p2, path.elements[-2].p2, radius=inner_fillet_radius)
+            modified = False
+            if outer_via.distance(outer_fillet) <= trace_width / 2.0 + trace_spacing:
+                outer_fillet_radius += 0.1
+                modified = True
+            if inner_via.distance(inner_fillet) <= trace_width / 2.0 + trace_width:
+                inner_fillet_radius += 0.1
+                modified = True
+            if not modified:
+                break
+
         outer_radius_initial = outer_radius
         inner_radius_initial = inner_radius
-        # TODO : automatic calculation of the fillets
-        outer_fillet_radius = 1.2
-        inner_fillet_radius = 2.2
         line_left = Line.from_two_points(Point.origin(), Point.polar(-angle/2.0, outer_radius)).offset(loop_offset * 0.5 + outer_fillet_radius)
         arc_outer = Arc(Point.polar(-angle/2.0, outer_radius), Point.polar(angle/2.0, outer_radius), outer_radius)
         point_start = line_left.intersect(arc_outer)
@@ -173,7 +204,7 @@ class Coil:
             point_outer_right = line_right.intersect(arc_outer)
             arc = Arc(path.end_point, point_outer_right, outer_radius)
             closest_via, distance = Via.closest_in_list(inside_vias.values(), arc)
-            if distance < 0: # Collision
+            if distance < trace_width / 2.0 + trace_spacing: # Collision
                 collision_via = closest_via
             path.append_arc(point_outer_right, outer_radius, anticlockwise=False, fillet_radius=outer_fillet_radius, tag=CoilSide.OUTER)
             if collision_via is not None:
@@ -183,7 +214,7 @@ class Coil:
             point_inner_right = line_right.intersect(arc_inner)
             segment = Segment(path.end_point, point_inner_right)
             closest_via, distance = Via.closest_in_list(inside_vias.values(), segment)
-            if distance < 0: # Collision
+            if distance < trace_width / 2.0 + trace_spacing: # Collision
                 collision_via = closest_via
             path.append_segment(point_inner_right, fillet_radius=outer_fillet_radius, tag=CoilSide.RIGHT)
             if collision_via is not None:
@@ -193,7 +224,7 @@ class Coil:
             point_inner_left = line_left.intersect(arc_inner)
             arc = Arc(path.end_point, point_inner_left, outer_radius, reverse=True)
             closest_via, distance = Via.closest_in_list(inside_vias.values(), arc)
-            if distance < 0: # Collision
+            if distance < trace_width / 2.0 + trace_spacing: # Collision
                 collision_via = closest_via
             path.append_arc(point_inner_left, inner_radius, anticlockwise=True, fillet_radius=inner_fillet_radius, tag=CoilSide.INNER)
             if collision_via is not None:
@@ -209,7 +240,7 @@ class Coil:
             point_outer_left = line_left.intersect(arc_outer)
             segment = Segment(path.end_point, point_outer_left)
             closest_via, distance = Via.closest_in_list(inside_vias.values(), segment)
-            if distance < 0: # Collision
+            if distance < trace_width / 2.0 + trace_spacing: # Collision
                 collision_via = closest_via
             path.append_segment(point_outer_left, fillet_radius=inner_fillet_radius, tag=CoilSide.LEFT)
             if collision_via is not None:
@@ -373,7 +404,7 @@ class PCB:
         # Inside vias
         # TODO : replace the "sep" parameter with a computation to make the line between via_inner_2 and via_inner_3 parallel to the side
         coil_B_center = Point(0, ((config.board_radius - config.board_outer_margin) + (config.hole_radius + config.board_inner_margin)) / 2.0)
-        sep = 0.3
+        sep = 0.4
         inside_outer_via = Via(coil_B_center + Vector(0, (config.via_diameter_w_spacing + sep) / 2.0), config.via_diameter, config.via_hole_diameter, tag=CoilConnection.INSIDE_OUTER_VIA)
         inside_inner_via = Via(coil_B_center - Vector(0, (config.via_diameter_w_spacing + sep) / 2.0), config.via_diameter, config.via_hole_diameter, tag=CoilConnection.INSIDE_INNER_VIA)
         c1 = Circle(inside_outer_via.center, config.via_diameter_w_spacing)
@@ -403,12 +434,12 @@ class PCB:
             Point.polar(-config.coil_angle/2.0, config.board_radius - config.board_outer_margin),
             Point.polar(config.coil_angle/2.0, config.board_radius - config.board_outer_margin),
             config.board_radius - config.board_outer_margin
-        ).offset(-config.via_diameter / 2.0)
+        ).offset(-config.via_diameter / 2.0 + config.outer_vias_offset)
         inner_arc = Arc(
             Point.polar(-config.coil_angle/2.0, config.hole_radius + config.board_inner_margin),
             Point.polar(config.coil_angle/2.0, config.hole_radius + config.board_inner_margin),
             config.hole_radius + config.board_inner_margin
-        ).offset(config.via_diameter / 2.0)
+        ).offset(config.via_diameter / 2.0 - config.inner_vias_offset)
         points = [
             (left_line.intersect(outer_arc), CoilConnection.OUTSIDE_OUTER_LEFT_VIA),
             (right_line.intersect(outer_arc), CoilConnection.OUTSIDE_OUTER_RIGHT_VIA),
@@ -474,31 +505,33 @@ class PCB:
         # Generate the coils on all layers
         layers = {}
         for layer_id, specs in layers_specs.items():
-            # Generate the base Coil for this layer
-            coil_B = Coil.generate(
-                angle = config.coil_angle,
-                outer_radius = config.board_radius - config.board_outer_margin - config.trace_width / 2.0,
-                inner_radius = config.hole_radius + config.board_inner_margin + config.trace_width / 2.0,
-                anticlockwise = specs['anticlockwise'],
-                loop_offset = config.trace_spacing + config.trace_width,
-                outside_vias = outside_vias,
-                inside_vias = inside_vias,
-                outside_connection = specs['outside_connection'],
-                inside_connection = specs['inside_connection'],
-                max_turns = config.max_turns_per_layer,
-                construction_geometry = construction_geometry,
-            )
+            if config.draw_only_layers is None or layer_id in config.draw_only_layers:
+                # Generate the base Coil for this layer
+                coil_B = Coil.generate(
+                    angle = config.coil_angle,
+                    outer_radius = config.board_radius - config.board_outer_margin - config.trace_width / 2.0,
+                    inner_radius = config.hole_radius + config.board_inner_margin + config.trace_width / 2.0,
+                    anticlockwise = specs['anticlockwise'],
+                    trace_width = config.trace_width,
+                    trace_spacing = config.trace_spacing,
+                    outside_vias = outside_vias,
+                    inside_vias = inside_vias,
+                    outside_connection = specs['outside_connection'],
+                    inside_connection = specs['inside_connection'],
+                    max_turns = config.max_turns_per_layer,
+                    construction_geometry = construction_geometry,
+                )
 
-            # Generate the other coils by rotating and mirroring the base coil
-            # TODO : adapt for different number of coils
-            coil_A = coil_B.rotated(board_center, -config.coil_angle)
-            coil_C = coil_B.rotated(board_center, config.coil_angle)
-            coil_A2 = coil_C.mirrored_x()
-            coil_B2 = coil_B.mirrored_x()
-            coil_C2 = coil_A.mirrored_x()
+                # Generate the other coils by rotating and mirroring the base coil
+                # TODO : adapt for different number of coils
+                coil_A = coil_B.rotated(board_center, -config.coil_angle)
+                coil_C = coil_B.rotated(board_center, config.coil_angle)
+                coil_A2 = coil_C.mirrored_x()
+                coil_B2 = coil_B.mirrored_x()
+                coil_C2 = coil_A.mirrored_x()
 
-            # Add these coils to the current layer
-            layers[layer_id] = [coil_A, coil_B, coil_C, coil_A2, coil_B2, coil_C2]
+                # Add these coils to the current layer
+                layers[layer_id] = [coil_A, coil_B, coil_C, coil_A2, coil_B2, coil_C2]
 
         # Add the other layers
         layers['outline'] = outline
@@ -513,7 +546,7 @@ class PCB:
 
         # Draw the layers
         for layer, objects in self.layers.items():
-            if self.config.only_layers is None or layer in self.config.only_layers:
+            if self.config.draw_only_layers is None or layer in self.config.draw_only_layers:
                 for object in objects:
                     object.draw_svg(
                         drawing,
@@ -523,8 +556,9 @@ class PCB:
                     )
 
         # Draw the vias
-        for via in self.vias:
-            via.draw_svg(drawing, self.config.via_color, self.config.via_hole_color)
+        if self.config.draw_vias:
+            for via in self.vias:
+                via.draw_svg(drawing, self.config.via_color, self.config.via_hole_color)
 
         # Draw the construction geometry
         if self.config.draw_construction_geometry:

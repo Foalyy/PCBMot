@@ -15,10 +15,14 @@ config = Config(
     trace_spacing = 0.1, # mm
     via_diameter = 0.45, # mm
     via_hole_diameter = 0.3, # mm
+    outer_vias_offset = 0.0, # mm
+    inner_vias_offset = 0.0, # mm
     n_phases = 3,
     n_slots_per_phase = 2,
+    draw_vias = True,
+    draw_terminals = True,
     draw_construction_geometry = True,
-    only_layers = None,
+    draw_only_layers = None,
 )
 
 # Create the PCB

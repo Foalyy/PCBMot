@@ -44,9 +44,10 @@ class SVGStyle:
     arc_thickness: float = 0.05
     arc_dashes = "0.2 0.12"
 
-    path_color: str = "#0044AA"
+    path_color: str = "#37C837"
     path_opacity: float = 0.5
-    path_thickness: float = 1.0
+    path_thickness: float = 0.05
+    path_dashes = "0.2 0.12"
 
 style = SVGStyle()
 
@@ -1098,7 +1099,7 @@ class PathArc(PathElement):
         """Create a copy of this PathArc mirrored about the Y axis"""
         return PathArc(self.p2.mirrored_y(), self.radius, not self.anticlockwise, self.tag)
 
-class Path:
+class Path(DrawableObject):
     """A Path consisting of a list of connected segments and arcs"""
 
     def __init__(self, start_point: Point):
@@ -1347,6 +1348,6 @@ class Path:
             stroke = color or style.path_color,
             stroke_opacity = opacity or style.path_opacity,
             stroke_width = thickness or style.path_thickness,
-            stroke_dasharray = dashes or style.circle_dashes,
+            stroke_dasharray = dashes or style.path_dashes,
         ))
         return self
