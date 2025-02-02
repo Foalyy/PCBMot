@@ -26,6 +26,12 @@ class Config:
         terminal_diameter: float,
         terminal_hole_diameter: float,
         terminal_offset: float,
+        link_series_coils: bool,
+        series_link_trace_width: float,
+        series_link_offset: float,
+        link_com: bool,
+        com_link_trace_width: float,
+        com_link_offset: float,
         draw_vias: bool,
         draw_terminals: bool,
         draw_construction_geometry: bool,
@@ -53,6 +59,12 @@ class Config:
         self.terminal_diameter: float = terminal_diameter
         self.terminal_hole_diameter: float = terminal_hole_diameter
         self.terminal_offset: float = terminal_offset
+        self.link_series_coils: bool = link_series_coils
+        self.series_link_trace_width: float = series_link_trace_width
+        self.series_link_offset: float = series_link_offset
+        self.link_com: bool = link_com
+        self.com_link_trace_width: float = com_link_trace_width
+        self.com_link_offset: float = com_link_offset
         self.draw_vias: bool = draw_vias
         self.draw_terminals: bool = draw_terminals
         self.draw_construction_geometry: bool = draw_construction_geometry

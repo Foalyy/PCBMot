@@ -2,6 +2,7 @@ from typing import Self
 from enum import Enum
 from config import Config, TerminalType
 import svgwrite as svg
+import math
 from geometry import sin, cos, tan, asin, acos, atan, atan2
 from geometry import DrawableObject, Vector, Point, Line, Segment, Circle, Arc, PathSegment, PathArc, Path
 
@@ -438,7 +439,38 @@ class Coil:
         return Coil(path, self.n_turns)
     
     def draw_svg(self, drawing: svg.Drawing, color=None, opacity=None, thickness=None, dashes=None):
-        """Draw this Path on the given SVG drawing
+        """Draw this Coil on the given SVG drawing
+        
+        This method returns self and can therefore be chained."""
+
+        self.path.draw_svg(drawing, color, opacity, thickness, dashes)
+        return self
+
+class Link:
+    """A trace on the board linking two coils"""
+
+    def __init__(self, path: Path, trace_width: float, layer: str):
+        self.path: Path = path
+        self.trace_width: float = trace_width
+        self.layer: str = layer
+
+    def rotated(self, center: Self, angle: float) -> Self:
+        """Create a copy of this Link rotated around the given center point by the given angle"""
+        path = self.path.rotated(center, angle)
+        return Link(path, self.trace_width, self.layer)
+    
+    def mirrored_x(self) -> Self:
+        """Create a copy of this Link mirrored about the X axis"""
+        path = self.path.mirrored_x()
+        return Link(path, self.trace_width, self.layer)
+    
+    def mirrored_y(self) -> Self:
+        """Create a copy of this Link mirrored about the Y axis"""
+        path = self.path.mirrored_y()
+        return Link(path, self.trace_width, self.layer)
+    
+    def draw_svg(self, drawing: svg.Drawing, color=None, opacity=None, thickness=None, dashes=None):
+        """Draw this Link on the given SVG drawing
         
         This method returns self and can therefore be chained."""
 
@@ -448,16 +480,31 @@ class Coil:
 class PCB:
     """A PCB containing layers"""
 
-    def __init__(self, config: Config, board_center: Point, layers: dict, vias: list[Via], terminals: list[Terminal], construction_geometry: list):
+    def __init__(self,
+        config: Config,
+        board_center: Point,
+        layers: dict,
+        vias: list[Via],
+        terminals: list[Terminal],
+        links: list[Link],
+        construction_geometry: list
+    ):
         self.config = config
         self.board_center = board_center
         self.layers = layers
         self.vias = vias
         self.terminals = terminals
+        self.links = links
         self.construction_geometry = construction_geometry
     
     def generate(config: Config):
         """Generate a new PCB based on the given config"""
+        
+        layers = {}
+        vias = []
+        terminals = []
+        links = []
+        construction_geometry = []
 
         # Center the board on the origin
         board_center = Point.origin()
@@ -604,8 +651,6 @@ class PCB:
                 terminal = Terminal(Point(0.0, y), config.terminal_type, config.terminal_diameter, config.terminal_hole_diameter)
 
         # Copy the vias and terminals on all coils
-        vias = []
-        terminals = []
         for i in range(config.n_coils):
             for via in inside_vias.values():
                 vias.append(via.rotated(board_center, 360.0 * i / config.n_coils))
@@ -659,7 +704,6 @@ class PCB:
         }
 
         # Generate the coils on all layers
-        layers = {}
         for layer_id, specs in layers_specs.items():
             if config.draw_only_layers is None or layer_id in config.draw_only_layers:
                 # Generate the base Coil for this layer
@@ -690,11 +734,60 @@ class PCB:
                 # Add these coils to the current layer
                 layers[layer_id] = [coil_A, coil_B, coil_C, coil_A2, coil_B2, coil_C2]
 
+        # Link the coils that are in series, such as A with A'
+        if config.link_series_coils:
+            # TODO : adapt for different number of coils
+            connection_via_1 = outside_vias[layers_specs['bottom']['outside_connection']].center
+            connection_via_2 = connection_via_1.mirrored_x()
+            vias_circle_radius = board_center.distance(connection_via_1)
+            trace_center_radius = vias_circle_radius - config.via_diameter / 2.0 - config.trace_spacing - config.series_link_trace_width / 2.0 - config.series_link_offset
+            path = Path(connection_via_1)
+            if math.isclose(trace_center_radius, vias_circle_radius):
+                path.append_arc(connection_via_2, trace_center_radius, anticlockwise=False)
+            else:
+                circle = Circle(board_center, trace_center_radius)
+                line1 = Line.from_two_points(board_center, connection_via_1)
+                line2 = Line.from_two_points(board_center, connection_via_2)
+                corner1 = connection_via_1.closest(line1.intersect(circle))
+                corner2 = connection_via_2.closest(line2.intersect(circle))
+                fillet_radius = connection_via_1.distance(corner1) / 2.0
+                path.append_segment(corner1)
+                path.append_arc(corner2, trace_center_radius, anticlockwise=False, fillet_radius=fillet_radius)
+                path.append_segment(connection_via_2, fillet_radius=fillet_radius)
+            link_A = Link(path.rotated(board_center, -config.coil_angle), config.series_link_trace_width, 'top')
+            link_B = Link(path, config.series_link_trace_width, 'in1')
+            link_C = Link(path.rotated(board_center, config.coil_angle), config.series_link_trace_width, 'in2')
+            links.extend([link_A, link_B, link_C])
+
+        # Link the common point in a wye (star) configuration
+        if config.link_com:
+            # TODO : adapt for different number of coils
+            terminal_B_prime = terminal.mirrored_x().center
+            terminal_A_prime = terminal_B_prime.rotated(board_center, -config.coil_angle)
+            terminal_C_prime = terminal_B_prime.rotated(board_center, config.coil_angle)
+            trace_center_radius = board_center.distance(terminal_B_prime) + config.com_link_offset
+            path = Path(terminal_A_prime)
+            if math.isclose(config.com_link_offset, 0.0, abs_tol=1e-9):
+                path.append_arc(terminal_B_prime, trace_center_radius, anticlockwise=False)
+            else:
+                circle = Circle(board_center, trace_center_radius)
+                line1 = Line.from_two_points(board_center, terminal_A_prime)
+                line2 = Line.from_two_points(board_center, terminal_B_prime)
+                corner1 = terminal_A_prime.closest(line1.intersect(circle))
+                corner2 = terminal_B_prime.closest(line2.intersect(circle))
+                fillet_radius = terminal_A_prime.distance(corner1) / 2.0
+                path.append_segment(corner1)
+                path.append_arc(corner2, trace_center_radius, anticlockwise=False, fillet_radius=fillet_radius)
+                path.append_segment(terminal_B_prime, fillet_radius=fillet_radius)
+            link_A_prime_B_prime = Link(path, config.com_link_trace_width, 'top')
+            link_B_prime_C_prime = Link(path.rotated(board_center, config.coil_angle), config.com_link_trace_width, 'top')
+            links.extend([link_A_prime_B_prime, link_B_prime_C_prime])
+
         # Add the other layers
         layers['outline'] = outline
 
         # Create the PCB
-        return PCB(config, board_center, layers, vias, terminals, construction_geometry)
+        return PCB(config, board_center, layers, vias, terminals, links, construction_geometry)
     
     def draw_svg(self, drawing: svg.Drawing) -> Self:
         """Draw this PCB on the given SVG drawing
@@ -711,6 +804,15 @@ class PCB:
                         thickness = self.config.trace_width,
                         dashes = "none"
                     )
+
+        # Draw the link traces
+        for link in self.links:
+            link.draw_svg(
+                drawing,
+                color = self.config.layers_color.get(link.layer),
+                thickness = link.trace_width,
+                dashes = "none"
+            )
 
         # Draw the vias
         if self.config.draw_vias:
