@@ -1,6 +1,6 @@
 from typing import Self
 from enum import Enum
-from config import Config
+from config import Config, TerminalType
 import svgwrite as svg
 from geometry import sin, cos, tan, asin, acos, atan, atan2
 from geometry import DrawableObject, Vector, Point, Line, Segment, Circle, Arc, PathSegment, PathArc, Path
@@ -89,7 +89,7 @@ class Via:
         """Create a copy of this Via mirrored about the Y axis"""
         return Via(self.center.mirrored_y(), self.diameter, self.hole_diameter)
     
-    def draw_svg(self, drawing: svg.Drawing, via_color: str, via_hole_color: str):
+    def draw_svg(self, drawing: svg.Drawing, via_color: str, hole_color: str):
         """Draw this Via on the given SVG drawing
         
         This method returns self and can therefore be chained."""
@@ -108,7 +108,7 @@ class Via:
             self.center.to_viewport().as_tuple(),
             self.hole_diameter / 2.0,
             stroke = "none",
-            fill = via_hole_color,
+            fill = hole_color,
             opacity = 1.0,
         ))
 
@@ -127,6 +127,90 @@ class Via:
                 closest = via
         return (closest, min_distance)
 
+class Terminal:
+    """A terminal for external connection on the board"""
+
+    def __init__(self, center: Point, terminal_type: TerminalType, diameter: float, hole_diameter: float, tag=None):
+        self.center: Point = center
+        self.terminal_type: TerminalType = terminal_type
+        self.diameter: float = diameter
+        self.hole_diameter: float = hole_diameter
+        self.tag = tag
+    
+    def distance(self, object) -> float:
+        """Calculate the distance between this Terminal and the given object
+
+        Supported objects : Terminal, and any object supported by Point.distance().
+        Throws a TypeError if any other object type is given.
+        """
+        match object:
+            case Terminal():
+                return self.center.distance(object.center) - self.diameter
+
+            case _:
+                return self.center.distance(object) - self.diameter / 2.0
+    
+    def rotated(self, rotation_center: Self, angle: float) -> Self:
+        """Create a copy of this Terminal rotated around the given center point by the given angle"""
+        return Terminal(self.center.rotated(rotation_center, angle), self.terminal_type, self.diameter, self.hole_diameter)
+    
+    def mirrored_x(self) -> Self:
+        """Create a copy of this Terminal mirrored about the X axis"""
+        return Terminal(self.center.mirrored_x(), self.terminal_type, self.diameter, self.hole_diameter)
+    
+    def mirrored_y(self) -> Self:
+        """Create a copy of this Terminal mirrored about the Y axis"""
+        return Terminal(self.center.mirrored_y(), self.terminal_type, self.diameter, self.hole_diameter)
+    
+    def draw_svg(self, drawing: svg.Drawing, pad_color: str, hole_color: str, clip_path_id = None):
+        """Draw this Terminal on the given SVG drawing
+        
+        This method returns self and can therefore be chained."""
+
+        if self.terminal_type == TerminalType.NONE:
+            return
+
+        # Draw the pad
+        if clip_path_id:
+            drawing.add(drawing.circle(
+                self.center.to_viewport().as_tuple(),
+                self.diameter / 2.0,
+                stroke = "none",
+                fill = pad_color,
+                opacity = 1.0,
+                clip_path = f"url(#{clip_path_id})" if clip_path_id is not None else None,
+            ))
+        else:
+            drawing.add(drawing.circle(
+                self.center.to_viewport().as_tuple(),
+                self.diameter / 2.0,
+                stroke = "none",
+                fill = pad_color,
+                opacity = 1.0,
+            ))
+
+        # Draw the hole
+        if self.terminal_type in [TerminalType.THROUGH_HOLE, TerminalType.CASTELLATED]:
+            if clip_path_id:
+                drawing.add(drawing.circle(
+                    self.center.to_viewport().as_tuple(),
+                    self.hole_diameter / 2.0,
+                    stroke = "none",
+                    fill = hole_color,
+                    opacity = 1.0,
+                    clip_path = f"url(#{clip_path_id})" if clip_path_id is not None else None,
+                ))
+            else:
+                drawing.add(drawing.circle(
+                    self.center.to_viewport().as_tuple(),
+                    self.hole_diameter / 2.0,
+                    stroke = "none",
+                    fill = hole_color,
+                    opacity = 1.0,
+                ))
+
+        return self
+
 class Coil:
     """A single coil on the board"""
 
@@ -143,6 +227,7 @@ class Coil:
             trace_spacing: float,
             outside_vias: dict[CoilConnection, Via],
             inside_vias: dict[CoilConnection, Via],
+            terminal: Terminal,
             outside_connection: CoilConnection,
             inside_connection: CoilConnection,
             max_turns: int,
@@ -264,22 +349,36 @@ class Coil:
 
         # Connect the start of the coil to the requested via or terminal
         if outside_connection is not None:
+            # Pop the first elements from the path until we find the one that should be connected to the target via or terminal
+            while not CoilConnection.match_side(outside_connection, path.first().tag):
+                path.pop_first()
+                path.pop_first() # Fillet
+                if len(path.elements) == 1:
+                    raise ValueError("Cannot find path element to connect to requested outside connection")
+
             if outside_connection == CoilConnection.TERMINAL:
-                # TODO
-                pass
+                # Check that a terminal was provided
+                if terminal is None:
+                    raise ValueError("Unable to connect a coil to a non-existant terminal")
+            
+                # Replace the first element in the path with a corner connected to the terminal
+                projected = terminal.center.projected(path.first_geometry())
+                replaced_element = path.pop_first()
+                match replaced_element:
+                    case PathSegment():
+                        path.prepend_segment(projected)
+                        path.prepend_segment(terminal.center, fillet_radius=0.3)
+
+                    case PathArc():
+                        path.prepend_arc(projected, replaced_element.radius, replaced_element.anticlockwise)
+                        path.prepend_segment(terminal.center, fillet_radius=0.3)
+
             else:
                 # Via to connect to
                 try:
                     target_via = outside_vias[outside_connection]
                 except KeyError:
                     raise ValueError("Invalid outside_connection")
-
-                # Pop the first elements from the path until we find the one that should be connected to the target via
-                while not outside_connection.match_side(path.first().tag):
-                    path.pop_first()
-                    path.pop_first() # Fillet
-                    if len(path.elements) == 1:
-                        raise ValueError("Cannot find path element to connect to requested outside connection")
                 
                 # Connect the start of the coil to the target via
                 if outside_connection in [CoilConnection.OUTSIDE_OUTER_RIGHT_VIA, CoilConnection.OUTSIDE_INNER_LEFT_VIA]:
@@ -349,10 +448,12 @@ class Coil:
 class PCB:
     """A PCB containing layers"""
 
-    def __init__(self, config: Config, layers: dict, vias: list[Via], construction_geometry: list):
+    def __init__(self, config: Config, board_center: Point, layers: dict, vias: list[Via], terminals: list[Terminal], construction_geometry: list):
         self.config = config
+        self.board_center = board_center
         self.layers = layers
         self.vias = vias
+        self.terminals = terminals
         self.construction_geometry = construction_geometry
     
     def generate(config: Config):
@@ -488,20 +589,36 @@ class PCB:
         outside_vias = {}
         for point, tag in points:
             outside_vias[tag] = Via(point, config.via_diameter, config.via_hole_diameter, tag=tag)
+        
+        # Terminal
+        terminal = None
+        match config.terminal_type:
+            case TerminalType.THROUGH_HOLE | TerminalType.SMD:
+                # Align the terminal outside the coil
+                y = config.board_radius - config.board_outer_margin + config.trace_spacing + config.terminal_offset + config.terminal_diameter / 2.0
+                terminal = Terminal(Point(0.0, y), config.terminal_type, config.terminal_diameter, config.terminal_hole_diameter)
+            
+            case TerminalType.CASTELLATED:
+                # Align the terminal on the edge of the board
+                y = config.board_radius
+                terminal = Terminal(Point(0.0, y), config.terminal_type, config.terminal_diameter, config.terminal_hole_diameter)
 
-        # Copy the vias on all coils
+        # Copy the vias and terminals on all coils
         vias = []
+        terminals = []
         for i in range(config.n_coils):
             for via in inside_vias.values():
                 vias.append(via.rotated(board_center, 360.0 * i / config.n_coils))
             for via in outside_vias.values():
                 vias.append(via.rotated(board_center, 360.0 * i / config.n_coils))
+            if terminal:
+                terminals.append(terminal.rotated(board_center, 360.0 * i / config.n_coils))
 
         # Specific generation settings for each layer : coil direction and vias connections
         layers_specs = {
             'top': {
                 'anticlockwise': False,
-                'outside_connection': CoilConnection.TERMINAL,
+                'outside_connection': CoilConnection.TERMINAL if config.terminal_type != TerminalType.NONE else None,
                 'inside_connection': CoilConnection.INSIDE_OUTER_VIA,
             },
             'in1': {
@@ -555,6 +672,7 @@ class PCB:
                     trace_spacing = config.trace_spacing,
                     outside_vias = outside_vias,
                     inside_vias = inside_vias,
+                    terminal = terminal,
                     outside_connection = specs['outside_connection'],
                     inside_connection = specs['inside_connection'],
                     max_turns = config.max_turns_per_layer,
@@ -576,7 +694,7 @@ class PCB:
         layers['outline'] = outline
 
         # Create the PCB
-        return PCB(config, layers, vias, construction_geometry)
+        return PCB(config, board_center, layers, vias, terminals, construction_geometry)
     
     def draw_svg(self, drawing: svg.Drawing) -> Self:
         """Draw this PCB on the given SVG drawing
@@ -598,6 +716,18 @@ class PCB:
         if self.config.draw_vias:
             for via in self.vias:
                 via.draw_svg(drawing, self.config.via_color, self.config.via_hole_color)
+
+        # Draw the terminals
+        # Castellated-hole terminals are clipped for better rendering (only when exporting with the
+        # SVG 'full' profile, as clipping paths are not available on the 'tiny' profile).
+        clip_path_id = None
+        if self.config.terminal_type == TerminalType.CASTELLATED and self.config.svg_profile == 'full':
+            clip_path_id = "clip_castellated_terminals"
+            clip_path = drawing.defs.add(drawing.clipPath(id=clip_path_id))
+            clip_path.add(drawing.circle(self.board_center.to_viewport().as_tuple(), self.config.board_radius))
+        if self.config.draw_terminals:
+            for terminal in self.terminals:
+                terminal.draw_svg(drawing, self.config.terminal_color, self.config.terminal_hole_color, clip_path_id)
 
         # Draw the construction geometry
         if self.config.draw_construction_geometry:

@@ -1,6 +1,6 @@
 from typing import Self
 import svgwrite as svg
-from config import Config
+from config import Config, TerminalType
 from pcb import PCB
 
 
@@ -9,6 +9,8 @@ SVG_FILENAME = 'example.svg'
 config = Config(
     board_diameter = 23, # mm
     hole_diameter = 4, # mm
+    n_phases = 3,
+    n_slots_per_phase = 2,
     n_layers = 8,
     max_turns_per_layer = None,
     trace_width = 0.1, # mm
@@ -17,12 +19,15 @@ config = Config(
     via_hole_diameter = 0.3, # mm
     outer_vias_offset = 0.0, # mm
     inner_vias_offset = 0.0, # mm
-    n_phases = 3,
-    n_slots_per_phase = 2,
+    terminal_type = TerminalType.THROUGH_HOLE,
+    terminal_diameter = 1.5, # mm
+    terminal_hole_diameter = 0.8, # mm
+    terminal_offset = 0.0, # mm
     draw_vias = True,
     draw_terminals = True,
     draw_construction_geometry = True,
     draw_only_layers = None,
+    svg_profile = 'tiny'
 )
 
 # Create the PCB
@@ -33,7 +38,7 @@ dwg = svg.Drawing(
     SVG_FILENAME,
     size=("1000px", "1000px"),
     viewBox=f"{-config.viewport_width/2.0} {-config.viewport_height/2.0} {config.viewport_width} {config.viewport_height}",
-    profile='tiny',
+    profile=config.svg_profile,
     fill="none",
     stroke="#000000",
     stroke_width=0.5,

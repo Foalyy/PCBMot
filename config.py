@@ -1,9 +1,19 @@
+from enum import Enum
+
+class TerminalType(Enum):
+    NONE = 1
+    THROUGH_HOLE = 2
+    SMD = 3
+    CASTELLATED = 4
+
 ## Board config
 class Config:
     def __init__(
         self,
         board_diameter: float,
         hole_diameter: float,
+        n_phases: int,
+        n_slots_per_phase: int,
         n_layers: int,
         max_turns_per_layer: int,
         trace_width: float,
@@ -12,12 +22,15 @@ class Config:
         via_hole_diameter: float,
         outer_vias_offset: float,
         inner_vias_offset: float,
-        n_phases: int,
-        n_slots_per_phase: int,
+        terminal_type: TerminalType,
+        terminal_diameter: float,
+        terminal_hole_diameter: float,
+        terminal_offset: float,
         draw_vias: bool,
         draw_terminals: bool,
         draw_construction_geometry: bool,
         draw_only_layers: list[str],
+        svg_profile: str,
     ):
         # Check parameters
         if n_layers not in [2, 4, 6, 8]:
@@ -26,20 +39,25 @@ class Config:
         # Save parameters
         self.board_diameter: float = board_diameter
         self.hole_diameter: float = hole_diameter
+        self.n_phases: int = n_phases
+        self.n_slots_per_phase: int = n_slots_per_phase
         self.n_layers: int = n_layers
         self.max_turns_per_layer: int = max_turns_per_layer
         self.trace_width: float = trace_width
         self.trace_spacing: float = trace_spacing
         self.via_diameter: float = via_diameter
+        self.via_hole_diameter: float = via_hole_diameter
         self.outer_vias_offset: float = outer_vias_offset
         self.inner_vias_offset: float = inner_vias_offset
-        self.via_hole_diameter: float = via_hole_diameter
-        self.n_phases: int = n_phases
-        self.n_slots_per_phase: int = n_slots_per_phase
+        self.terminal_type: TerminalType = terminal_type
+        self.terminal_diameter: float = terminal_diameter
+        self.terminal_hole_diameter: float = terminal_hole_diameter
+        self.terminal_offset: float = terminal_offset
         self.draw_vias: bool = draw_vias
         self.draw_terminals: bool = draw_terminals
         self.draw_construction_geometry: bool = draw_construction_geometry
         self.draw_only_layers: list[str] = draw_only_layers
+        self.svg_profile = svg_profile
 
         # Computed parameters
         self.viewport_width: float = self.board_diameter * 1.1
@@ -71,3 +89,5 @@ class Config:
         }
         self.via_color = "#ECECEC"
         self.via_hole_color = "#E3B72E"
+        self.terminal_color = "#E6B631"
+        self.terminal_hole_color = self.background_color
