@@ -52,8 +52,6 @@ class Config:
             raise ValueError("The board diameter is smaller than the hole diameter")
         if not (n_slots_per_phase >= 1 and (n_slots_per_phase == 1 or n_slots_per_phase % 2 == 0)):
             raise ValueError("The number of slots per phase must be 1 or an even number")
-        if n_layers not in [2, 4, 6, 8]:
-            raise ValueError("The number of layers must be 2, 4, 6 or 8")
         if link_series_coils and n_phases > n_layers:
             raise ValueError("Unable to generate the connections between the coils because the number of layers should be greater than or equal to the number of phases, either increase the number of layers or disable link_series_coils")
         if terminal_type not in [TerminalType.NONE, TerminalType.THROUGH_HOLE, TerminalType.SMD, TerminalType.CASTELLATED]:
@@ -104,7 +102,17 @@ class Config:
             self.max_turns_per_layer: float = 1000
         if self.coil_angle is None:
             self.coil_angle: float = 360.0 / self.n_coils
-        self.layers = ['top', 'in1', 'in2', 'in3', 'in4', 'in5', 'in6', 'bottom']
+        match n_layers:
+            case 2:
+                self.layers = ['top', 'bottom']
+            case 4:
+                self.layers = ['top', 'in1', 'in2', 'bottom']
+            case 6:
+                self.layers = ['top', 'in1', 'in2', 'in3', 'in4', 'bottom']
+            case 8:
+                self.layers = ['top', 'in1', 'in2', 'in3', 'in4', 'in5', 'in6', 'bottom']
+            case _:
+                raise ValueError("The number of layers must be 2, 4, 6 or 8")
 
         # SVG style
         self.background_color = "#001023"

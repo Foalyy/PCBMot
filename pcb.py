@@ -222,57 +222,51 @@ class Coil:
         self.n_turns: int = n_turns
 
     def generate(
+            config: Config,
             board_center: Point,
             angle: float,
             outer_radius: float,
             inner_radius: float,
             anticlockwise: bool,
-            trace_width: float,
-            trace_spacing: float,
             outside_vias: dict[CoilConnection, Via],
             inside_vias: dict[CoilConnection, Via],
             terminal: Terminal,
             outside_connection: CoilConnection,
             inside_connection: CoilConnection,
-            max_turns: int,
             max_outside_connection_length: float,
             construction_geometry: list,
         ) -> Self:
         """Generate a coil centered around the vertical axis based on the given parameters"""
 
-        # If the coil should be anticlockwise, generate a clockwise coil and mirror it along the Y axis
-        # at the end. The requested connections should therefore be mirrored first in order to match.
-        if anticlockwise:
-            outside_connection = CoilConnection.mirrored_y(outside_connection)
-            inside_connection = CoilConnection.mirrored_y(inside_connection)
-
         # Distance between the centerline of each adjacent coil turn
-        loop_offset = trace_spacing + trace_width
+        loop_offset = config.trace_spacing + config.trace_width
         
-        # Calculate the best outer fillet radius of the outermost coil turn to fit the via
+        # If the outer vias are used, calculate the best outer fillet radius of the outermost coil turn to fit the via
         # Twice the trace width is a sane value to start for any track width
-        outer_fillet_radius, success = Coil._compute_fillet(
-            arc_radius = outer_radius,
-            opposite_radius = inner_radius,
-            angle = angle,
-            initial_fillet_radius = trace_width * 2,
-            via = outside_vias[CoilConnection.OUTSIDE_OUTER_RIGHT_VIA],
-            trace_width = trace_width,
-            trace_spacing = trace_spacing,
-            construction_geometry = construction_geometry,
-        )
-        if not success:
-            print("Warning : unable to compute a fillet for the outer side of the coil, check for collision with the via and try increasing outer_vias_offset")
-        
+        outer_fillet_radius = config.trace_width * 2
+        if config.n_layers >= 6:
+            outer_fillet_radius, success = Coil._compute_fillet(
+                arc_radius = outer_radius,
+                opposite_radius = inner_radius,
+                angle = angle,
+                initial_fillet_radius = outer_fillet_radius,
+                via = outside_vias[CoilConnection.OUTSIDE_OUTER_RIGHT_VIA],
+                trace_width = config.trace_width,
+                trace_spacing = config.trace_spacing,
+                construction_geometry = construction_geometry,
+            )
+            if not success:
+                print("Warning : unable to compute a fillet for the outer side of the coil, check for collision with the via and try increasing outer_vias_offset")
+
         # Same calculation for the inner fillet radius
         inner_fillet_radius, success = Coil._compute_fillet(
             arc_radius = inner_radius,
             opposite_radius = outer_radius,
             angle = angle,
-            initial_fillet_radius = trace_width * 2,
+            initial_fillet_radius = config.trace_width * 2,
             via = outside_vias[CoilConnection.OUTSIDE_INNER_RIGHT_VIA],
-            trace_width = trace_width,
-            trace_spacing = trace_spacing,
+            trace_width = config.trace_width,
+            trace_spacing = config.trace_spacing,
             construction_geometry = construction_geometry,
         )
         if not success:
@@ -287,7 +281,7 @@ class Coil:
         path = Path(point_start)
         n_turns = 0
         collision_via = None
-        for i in range(max_turns):
+        for i in range(config.max_turns_per_layer):
             # Construction geometry
             line_left = Line.from_two_points(board_center, Point.polar(-angle/2.0, outer_radius)).offset(loop_offset * (i + 0.5))
             line_right = Line.from_two_points(board_center, Point.polar(angle/2.0, outer_radius)).offset(-loop_offset * (i + 0.5))
@@ -299,7 +293,7 @@ class Coil:
             point_outer_right = line_right.intersect(arc_outer)
             arc = Arc(path.end_point, point_outer_right, outer_radius)
             closest_via, distance = Via.closest_in_list(inside_vias.values(), arc)
-            if distance < trace_width / 2.0 + trace_spacing: # Collision
+            if distance < config.trace_width / 2.0 + config.trace_spacing: # Collision
                 collision_via = closest_via
             path.append_arc(point_outer_right, outer_radius, anticlockwise=False, fillet_radius=outer_fillet_radius, tag=CoilSide.OUTER)
             if collision_via is not None:
@@ -307,11 +301,11 @@ class Coil:
 
             # Segment to inner right
             point_inner_right = line_right.intersect(arc_inner)
-            if point_inner_right.x < trace_width:
+            if point_inner_right.x < config.trace_width:
                 break
             segment = Segment(path.end_point, point_inner_right)
             closest_via, distance = Via.closest_in_list(inside_vias.values(), segment)
-            if distance < trace_width / 2.0 + trace_spacing: # Collision
+            if distance < config.trace_width / 2.0 + config.trace_spacing: # Collision
                 collision_via = closest_via
             path.append_segment(point_inner_right, fillet_radius=outer_fillet_radius, tag=CoilSide.RIGHT)
             if collision_via is not None:
@@ -321,7 +315,7 @@ class Coil:
             point_inner_left = line_left.intersect(arc_inner)
             arc = Arc(path.end_point, point_inner_left, outer_radius, reverse=True)
             closest_via, distance = Via.closest_in_list(inside_vias.values(), arc)
-            if distance < trace_width / 2.0 + trace_spacing: # Collision
+            if distance < config.trace_width / 2.0 + config.trace_spacing: # Collision
                 collision_via = closest_via
             path.append_arc(point_inner_left, inner_radius, anticlockwise=True, fillet_radius=inner_fillet_radius, tag=CoilSide.INNER)
             if collision_via is not None:
@@ -337,7 +331,7 @@ class Coil:
             point_outer_left = line_left.intersect(arc_outer)
             segment = Segment(path.end_point, point_outer_left)
             closest_via, distance = Via.closest_in_list(inside_vias.values(), segment)
-            if distance < trace_width / 2.0 + trace_spacing: # Collision
+            if distance < config.trace_width / 2.0 + config.trace_spacing: # Collision
                 collision_via = closest_via
             path.append_segment(point_outer_left, fillet_radius=inner_fillet_radius, tag=CoilSide.LEFT)
             if collision_via is not None:
@@ -345,17 +339,18 @@ class Coil:
 
             # Reduce the fillet radius for the next loop
             outer_fillet_radius -= loop_offset
-            if outer_fillet_radius < trace_width:
-                outer_fillet_radius = trace_width
+            if outer_fillet_radius < config.trace_width:
+                outer_fillet_radius = config.trace_width
             inner_fillet_radius -= loop_offset
-            if inner_fillet_radius < trace_width:
-                inner_fillet_radius = trace_width
+            if inner_fillet_radius < config.trace_width:
+                inner_fillet_radius = config.trace_width
             
             # Count the number of turns in the coil
             n_turns += 1
 
         # Connect the start of the coil to the requested via or terminal
-        while not CoilConnection.match_side(outside_connection, path.first().tag):
+        target_outside_connection = CoilConnection.mirrored_y(outside_connection) if anticlockwise else outside_connection
+        while not CoilConnection.match_side(target_outside_connection, path.first().tag):
             # Pop the first elements from the path until we find the one that should be connected to the target via or terminal
             path.pop_first()
             path.pop_first() # Fillet
@@ -376,7 +371,7 @@ class Coil:
                 corner = path.first_geometry().intersect(line)
                 connection_point = point.offset(line, max_outside_connection_length)
             replaced_element = path.pop_first()
-            fillet_radius = trace_width * 2
+            fillet_radius = config.trace_width * 2
             if path.start_point.x < fillet_radius:
                 fillet_radius = None # There is no room for the fillet
             match replaced_element:
@@ -392,15 +387,17 @@ class Coil:
             # Via to connect to
             try:
                 target_via = outside_vias[outside_connection]
+                if anticlockwise:
+                    target_via = target_via.mirrored_y()
             except KeyError:
                 raise ValueError("Invalid outside_connection")
             
-            # Connect the start of the coil to the target via
-            if outside_connection in [CoilConnection.OUTSIDE_OUTER_RIGHT_VIA, CoilConnection.OUTSIDE_INNER_LEFT_VIA]:
+            # Connect the outside of the coil to the target via
+            if target_outside_connection in [CoilConnection.OUTSIDE_OUTER_RIGHT_VIA, CoilConnection.OUTSIDE_INNER_LEFT_VIA]:
                 segment = Segment(path.first().p2, path.start_point)
                 tangent_arc = segment.tangent_arc_through_point(target_via.center)
                 path.prepend_arc(target_via.center, tangent_arc.radius, anticlockwise = segment.p2 == tangent_arc.p1)
-            elif outside_connection in [CoilConnection.OUTSIDE_OUTER_LEFT_VIA, CoilConnection.OUTSIDE_INNER_RIGHT_VIA]:
+            elif target_outside_connection in [CoilConnection.OUTSIDE_OUTER_LEFT_VIA, CoilConnection.OUTSIDE_INNER_RIGHT_VIA]:
                 first = path.first()
                 target_via_radius = board_center.distance(target_via.center)
                 if target_via_radius <= first.radius:
@@ -412,7 +409,7 @@ class Coil:
                     # The via is outside the arc radius, connect it with a fillet and a segment
                     path.prepend_segment(target_via.center, fillet_radius = (target_via_radius - first.radius) / 2.0)
 
-        # Connect the end of the coil to the requested via
+        # Connect the inside of the coil to the requested via
         if inside_connection is not None:
             # Via to connect to
             try:
@@ -429,12 +426,12 @@ class Coil:
             # Replace the last element in the path with a corner connected to the target via
             last_element = path.last_geometry()
             replaced_element = path.pop()
-            fillet_radius = trace_width * 2
+            fillet_radius = config.trace_width * 2
             corner = target_via.center.projected(last_element)
-            if replaced_element.p2.distance(corner) < fillet_radius:
-                fillet_radius = None # There is no room for the fillet
             if not last_element.contains_point(corner):
                 corner = last_element.midpoint()
+            if replaced_element.p2.distance(corner) < fillet_radius:
+                fillet_radius = None # There is no room for the fillet
             match replaced_element:
                 case PathSegment():
                     path.append_segment(corner)
@@ -628,67 +625,148 @@ class PCB:
             ),
         ]
 
+        # Specific generation settings for each layer : coil direction and vias connections
+        layers_specs = {}
+        match config.n_layers:
+            case 2:
+                outside_connections = [
+                    CoilConnection.TERMINAL if config.terminal_type != TerminalType.NONE else None,
+                    CoilConnection.OUTSIDE_INNER_RIGHT_VIA,
+                ]
+                inside_connections = [
+                    CoilConnection.INSIDE_OUTER_VIA,
+                ]
+            case 4:
+                outside_connections = [
+                    CoilConnection.TERMINAL if config.terminal_type != TerminalType.NONE else None,
+                    CoilConnection.OUTSIDE_INNER_LEFT_VIA,
+                    CoilConnection.OUTSIDE_INNER_RIGHT_VIA,
+                ]
+                inside_connections = [
+                    CoilConnection.INSIDE_OUTER_VIA,
+                    CoilConnection.INSIDE_INNER_VIA,
+                ]
+            case 6:
+                outside_connections = [
+                    CoilConnection.TERMINAL if config.terminal_type != TerminalType.NONE else None,
+                    CoilConnection.OUTSIDE_OUTER_RIGHT_VIA,
+                    CoilConnection.OUTSIDE_INNER_LEFT_VIA,
+                    CoilConnection.OUTSIDE_INNER_RIGHT_VIA,
+                ]
+                inside_connections = [
+                    CoilConnection.INSIDE_OUTER_VIA,
+                    CoilConnection.INSIDE_RIGHT_VIA,
+                    CoilConnection.INSIDE_INNER_VIA,
+                ]
+            case 8:
+                outside_connections = [
+                    CoilConnection.TERMINAL if config.terminal_type != TerminalType.NONE else None,
+                    CoilConnection.OUTSIDE_OUTER_RIGHT_VIA,
+                    CoilConnection.OUTSIDE_OUTER_LEFT_VIA,
+                    CoilConnection.OUTSIDE_INNER_LEFT_VIA,
+                    CoilConnection.OUTSIDE_INNER_RIGHT_VIA,
+                ]
+                inside_connections = [
+                    CoilConnection.INSIDE_OUTER_VIA,
+                    CoilConnection.INSIDE_LEFT_VIA,
+                    CoilConnection.INSIDE_INNER_VIA,
+                    CoilConnection.INSIDE_RIGHT_VIA,
+                ]
+        for i, layer_id in enumerate(config.layers):
+            layers_specs[layer_id] = {
+                'anticlockwise': i % 2 == 1,
+                'outside_connection': outside_connections[int((i + 1) / 2)],
+                'inside_connection': inside_connections[int(i / 2)],
+            }
+
         # Inside vias
-        # The vias are placed in an optimised diamond shape. If the coil is wider than tall (tangential length > radial length),
-        # keep the base diamond shape on its side with the two vertical vias adjacent to each other. Otherwise, optimise
-        # the shape to fit as many radial lines as possible.
+        inside_vias = {}
         coil_center_radius = ((config.board_radius - config.board_outer_margin) + (config.hole_radius + config.board_inner_margin)) / 2.0
+        coil_center = Point(0, coil_center_radius)
         tangential_length = 2 * math.pi * coil_center_radius * config.coil_angle / 360.
         radial_length = (config.board_radius - config.board_outer_margin) - (config.hole_radius + config.board_inner_margin)
-        coil_center = Point(0, coil_center_radius)
-        step = config.trace_width / 10.0
-        sep = 0.0
-        if radial_length >= tangential_length:
-            while True:
-                # The loop starts with the two vertical vias closest to each other, and the diamond shape is progressively
-                # stretched vertically until the line connecting the inner via and the left via is parallel to the left left.
-                # This ensures that this leaves as much room as possible for the radial traces.
+        match config.n_layers:
+            case 2:
+                # A single via placed in the middle
+                via = Via(coil_center, config.via_diameter, config.via_hole_diameter, tag=CoilConnection.INSIDE_OUTER_VIA)
+                inside_vias_list = [via]
+            case 4:
+                # Two vias placed vertically
+                inside_outer_via = Via(coil_center + Vector(0, config.via_diameter_w_spacing / 2.0), config.via_diameter, config.via_hole_diameter, tag=CoilConnection.INSIDE_OUTER_VIA)
+                inside_inner_via = Via(coil_center - Vector(0, config.via_diameter_w_spacing / 2.0), config.via_diameter, config.via_hole_diameter, tag=CoilConnection.INSIDE_INNER_VIA)
+                inside_vias_list = [inside_outer_via, inside_inner_via]
+                pass
+            case 6:
+                # Three vias, placed either vertically, or on a triangular shape
+                if tangential_length >= radial_length:
+                    # The coil is wider than it is tall, place the via in a triangle
+                    inside_inner_via = Via(coil_center + Vector(0, -config.via_diameter_w_spacing / 2.0), config.via_diameter, config.via_hole_diameter, tag=CoilConnection.INSIDE_INNER_VIA)
+                    inside_outer_left_via = Via(inside_inner_via.center + Vector.polar(-30, config.via_diameter_w_spacing), config.via_diameter, config.via_hole_diameter, tag=CoilConnection.INSIDE_OUTER_VIA)
+                    inside_outer_right_via = Via(inside_inner_via.center + Vector.polar(30, config.via_diameter_w_spacing), config.via_diameter, config.via_hole_diameter, tag=CoilConnection.INSIDE_RIGHT_VIA)
+                    inside_vias_list = [inside_outer_left_via, inside_outer_right_via, inside_inner_via]
+                else:
+                    # The coil is taller than it is wide, place the via vertically
+                    inside_outer_via = Via(coil_center + Vector(0, config.via_diameter_w_spacing), config.via_diameter, config.via_hole_diameter, tag=CoilConnection.INSIDE_OUTER_VIA)
+                    inside_middle_via = Via(coil_center, config.via_diameter, config.via_hole_diameter, tag=CoilConnection.INSIDE_RIGHT_VIA)
+                    inside_inner_via = Via(coil_center + Vector(0, -config.via_diameter_w_spacing), config.via_diameter, config.via_hole_diameter, tag=CoilConnection.INSIDE_INNER_VIA)
+                    inside_vias_list = [inside_outer_via, inside_middle_via, inside_inner_via]
+            case 8:
+                # Four vias placed in an optimised diamond shape. If the coil is wider than tall (tangential length > radial length),
+                # keep the base diamond shape on its side with the two vertical vias adjacent to each other. Otherwise, optimise
+                # the shape to fit as many radial lines as possible.
+                step = config.trace_width / 10.0
+                sep = 0.0
+                if radial_length >= tangential_length:
+                    while True:
+                        # The loop starts with the two vertical vias closest to each other, and the diamond shape is progressively
+                        # stretched vertically until the line connecting the inner via and the left via is parallel to the left left.
+                        # This ensures that this leaves as much room as possible for the radial traces.
 
-                # Compute the shape of the diamond
-                sep_test = sep + step
-                inside_outer_via = Via(coil_center + Vector(0, (config.via_diameter_w_spacing + sep_test) / 2.0), config.via_diameter, config.via_hole_diameter)
-                inside_inner_via = Via(coil_center - Vector(0, (config.via_diameter_w_spacing + sep_test) / 2.0), config.via_diameter, config.via_hole_diameter)
+                        # Compute the shape of the diamond
+                        sep_test = sep + step
+                        inside_outer_via = Via(coil_center + Vector(0, (config.via_diameter_w_spacing + sep_test) / 2.0), config.via_diameter, config.via_hole_diameter)
+                        inside_inner_via = Via(coil_center + Vector(0, -(config.via_diameter_w_spacing + sep_test) / 2.0), config.via_diameter, config.via_hole_diameter)
+                        c1 = Circle(inside_outer_via.center, config.via_diameter_w_spacing)
+                        c2 = Circle(inside_inner_via.center, config.via_diameter_w_spacing)
+                        points = c1.intersect(c2)
+                        if points is None:
+                            # No intersection, the vertical vias are too far appart : this shouldn't happen
+                            break
+                        if points[0].x < points[1].x:
+                            point_left = points[0]
+                        else:
+                            point_left = points[1]
+                        
+                        # Compute the cross product between the left line, and the line connecting the inner via and the left via
+                        v1 = Line.from_two_points(board_center, Point.polar(-config.coil_angle/2.0, config.board_radius)).unit_vector()
+                        v2 = Vector.from_two_points(inside_inner_via.center, point_left)
+                        if v1.cross(v2) < 0:
+                            # The cross product switched sign : we just passed the parallel
+                            break
+                        
+                        # Make sure there is enough spacing between the horizontal vias
+                        inside_via_3 = Via(points[0], config.via_diameter, config.via_hole_diameter)
+                        inside_via_4 = Via(points[1], config.via_diameter, config.via_hole_diameter)
+                        if inside_via_3.distance(inside_via_4) < config.trace_spacing:
+                            break
+                        sep = sep_test
+                inside_outer_via = Via(coil_center + Vector(0, (config.via_diameter_w_spacing + sep) / 2.0), config.via_diameter, config.via_hole_diameter, tag=CoilConnection.INSIDE_OUTER_VIA)
+                inside_inner_via = Via(coil_center - Vector(0, (config.via_diameter_w_spacing + sep) / 2.0), config.via_diameter, config.via_hole_diameter, tag=CoilConnection.INSIDE_INNER_VIA)
                 c1 = Circle(inside_outer_via.center, config.via_diameter_w_spacing)
                 c2 = Circle(inside_inner_via.center, config.via_diameter_w_spacing)
                 points = c1.intersect(c2)
-                if points is None:
-                    # No intersection, the vertical vias are too far appart : this shouldn't happen
-                    break
                 if points[0].x < points[1].x:
-                    point_left = points[0]
+                    tag3, tag4 = CoilConnection.INSIDE_LEFT_VIA, CoilConnection.INSIDE_RIGHT_VIA
                 else:
-                    point_left = points[1]
-                
-                # Compute the cross product between the left line, and the line connecting the inner via and the left via
-                v1 = Line.from_two_points(board_center, Point.polar(-config.coil_angle/2.0, config.board_radius)).unit_vector()
-                v2 = Vector.from_two_points(inside_inner_via.center, point_left)
-                if v1.cross(v2) < 0:
-                    # The cross product switched sign : we just passed the parallel
-                    break
-                
-                # Make sure there is enough spacing between the horizontal vias
-                inside_via_3 = Via(points[0], config.via_diameter, config.via_hole_diameter)
-                inside_via_4 = Via(points[1], config.via_diameter, config.via_hole_diameter)
-                if inside_via_3.distance(inside_via_4) < config.trace_spacing:
-                    break
-                sep = sep_test
-        inside_outer_via = Via(coil_center + Vector(0, (config.via_diameter_w_spacing + sep) / 2.0), config.via_diameter, config.via_hole_diameter, tag=CoilConnection.INSIDE_OUTER_VIA)
-        inside_inner_via = Via(coil_center - Vector(0, (config.via_diameter_w_spacing + sep) / 2.0), config.via_diameter, config.via_hole_diameter, tag=CoilConnection.INSIDE_INNER_VIA)
-        c1 = Circle(inside_outer_via.center, config.via_diameter_w_spacing)
-        c2 = Circle(inside_inner_via.center, config.via_diameter_w_spacing)
-        points = c1.intersect(c2)
-        if points[0].x < points[1].x:
-            tag3, tag4 = CoilConnection.INSIDE_LEFT_VIA, CoilConnection.INSIDE_RIGHT_VIA
-        else:
-            tag3, tag4 = CoilConnection.INSIDE_RIGHT_VIA, CoilConnection.INSIDE_LEFT_VIA
-        inside_via_3 = Via(points[0], config.via_diameter, config.via_hole_diameter, tag=tag3)
-        inside_via_4 = Via(points[1], config.via_diameter, config.via_hole_diameter, tag=tag4)
-        inside_vias_list = [inside_outer_via, inside_inner_via, inside_via_3, inside_via_4]
-        inside_vias = {}
+                    tag3, tag4 = CoilConnection.INSIDE_RIGHT_VIA, CoilConnection.INSIDE_LEFT_VIA
+                inside_via_3 = Via(points[0], config.via_diameter, config.via_hole_diameter, tag=tag3)
+                inside_via_4 = Via(points[1], config.via_diameter, config.via_hole_diameter, tag=tag4)
+                inside_vias_list = [inside_outer_via, inside_inner_via, inside_via_3, inside_via_4]
         for via in inside_vias_list:
             inside_vias[via.tag] = via
 
         # Outside vias
+        outside_vias = {}
         left_line = Line.from_two_points(
             board_center,
             Point.polar(-config.coil_angle/2.0, config.board_radius)
@@ -713,18 +791,24 @@ class PCB:
             (left_line.intersect(inner_arc), CoilConnection.OUTSIDE_INNER_LEFT_VIA),
             (right_line.intersect(inner_arc), CoilConnection.OUTSIDE_INNER_RIGHT_VIA),
         ]
-        outside_vias = {}
-        for point, tag in points:
-            outside_vias[tag] = Via(point, config.via_diameter, config.via_hole_diameter, tag=tag)
-        if outside_vias[CoilConnection.OUTSIDE_INNER_LEFT_VIA].distance(outside_vias[CoilConnection.OUTSIDE_INNER_RIGHT_VIA]) < 0:
-            print("Warning : collision between the outside inner vias")
+        for point, connection in points:
+            if connection in outside_connections:
+                outside_vias[connection] = Via(point, config.via_diameter, config.via_hole_diameter, tag=connection)
+        if CoilConnection.OUTSIDE_INNER_LEFT_VIA in outside_vias \
+                and outside_vias[CoilConnection.OUTSIDE_INNER_LEFT_VIA].distance(outside_vias[CoilConnection.OUTSIDE_INNER_RIGHT_VIA]) < 0:
+            print("Warning : collision between the vias closer to the center of the board")
 
         # Copy the vias for all coils
-        for i in range(config.n_coils):
-            for via in inside_vias.values():
-                vias.append(via.rotated(board_center, 360.0 * i / config.n_coils))
-            for via in outside_vias.values():
-                vias.append(via.rotated(board_center, 360.0 * i / config.n_coils))
+        for slot in range(config.n_slots_per_phase):
+            for phase in range(config.n_phases):
+                for via in inside_vias.values():
+                    if slot % 2 == 1:
+                        via = via.mirrored_y()
+                    vias.append(via.rotated(board_center, 360.0 * (slot * config.n_phases + phase) / config.n_coils))
+                for via in outside_vias.values():
+                    if slot % 2 == 1:
+                        via = via.mirrored_y()
+                    vias.append(via.rotated(board_center, 360.0 * (slot * config.n_phases + phase) / config.n_coils))
         
         # Terminal
         terminal = None
@@ -754,50 +838,6 @@ class PCB:
                     for i in range(config.n_phases):
                         terminals.append(terminal.rotated(board_center, 360.0 * -(i + 1) / config.n_coils))
 
-        # Specific generation settings for each layer : coil direction and vias connections
-        layers_specs = {
-            'top': {
-                'anticlockwise': False,
-                'outside_connection': CoilConnection.TERMINAL if config.terminal_type != TerminalType.NONE else None,
-                'inside_connection': CoilConnection.INSIDE_OUTER_VIA,
-            },
-            'in1': {
-                'anticlockwise': True,
-                'outside_connection': CoilConnection.OUTSIDE_OUTER_RIGHT_VIA,
-                'inside_connection': CoilConnection.INSIDE_OUTER_VIA,
-            },
-            'in2': {
-                'anticlockwise': False,
-                'outside_connection': CoilConnection.OUTSIDE_OUTER_RIGHT_VIA,
-                'inside_connection': CoilConnection.INSIDE_LEFT_VIA,
-            },
-            'in3': {
-                'anticlockwise': True,
-                'outside_connection': CoilConnection.OUTSIDE_OUTER_LEFT_VIA,
-                'inside_connection': CoilConnection.INSIDE_LEFT_VIA,
-            },
-            'in4': {
-                'anticlockwise': False,
-                'outside_connection': CoilConnection.OUTSIDE_OUTER_LEFT_VIA,
-                'inside_connection': CoilConnection.INSIDE_INNER_VIA,
-            },
-            'in5': {
-                'anticlockwise': True,
-                'outside_connection': CoilConnection.OUTSIDE_INNER_LEFT_VIA,
-                'inside_connection': CoilConnection.INSIDE_INNER_VIA,
-            },
-            'in6': {
-                'anticlockwise': False,
-                'outside_connection': CoilConnection.OUTSIDE_INNER_LEFT_VIA,
-                'inside_connection': CoilConnection.INSIDE_RIGHT_VIA,
-            },
-            'bottom': {
-                'anticlockwise': True,
-                'outside_connection': CoilConnection.OUTSIDE_INNER_RIGHT_VIA,
-                'inside_connection': CoilConnection.INSIDE_RIGHT_VIA,
-            },
-        }
-
         # Generate the coils on all layers
         coil_outside_connection_length = config.trace_width * 2
         for layer_id in config.layers:
@@ -805,19 +845,17 @@ class PCB:
 
             # Generate the base Coil for this layer
             coil_base = Coil.generate(
+                config = config,
                 board_center = board_center,
                 angle = config.coil_angle,
                 outer_radius = config.board_radius - config.board_outer_margin - config.trace_width / 2.0,
                 inner_radius = config.hole_radius + config.board_inner_margin + config.trace_width / 2.0,
                 anticlockwise = specs['anticlockwise'],
-                trace_width = config.trace_width,
-                trace_spacing = config.trace_spacing,
                 outside_vias = outside_vias,
                 inside_vias = inside_vias,
                 terminal = terminal,
                 outside_connection = specs['outside_connection'],
                 inside_connection = specs['inside_connection'],
-                max_turns = config.max_turns_per_layer,
                 max_outside_connection_length = coil_outside_connection_length,
                 construction_geometry = construction_geometry,
             )
