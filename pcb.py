@@ -245,36 +245,36 @@ class Coil:
         # Distance between the centerline of each adjacent coil turn
         loop_offset = trace_spacing + trace_width
         
-        # Calculate the best outer and inner fillet radii of the outermost coil turn to fit the vias
+        # Calculate the best outer fillet radius of the outermost coil turn to fit the via
         # Twice the trace width is a sane value to start for any track width
-        outer_fillet_radius = trace_width * 2
-        inner_fillet_radius = trace_width * 2
-        outer_via = outside_vias[CoilConnection.OUTSIDE_OUTER_RIGHT_VIA]
-        inner_via = outside_vias[CoilConnection.OUTSIDE_INNER_RIGHT_VIA]
-        construction_line_right = Line.from_two_points(Point.origin(), Point.polar(angle/2.0, outer_radius)).offset(-loop_offset * 0.5)
-        construction_arc_outer = Arc(Point.polar(-angle/2.0, outer_radius), Point.polar(angle/2.0, outer_radius), outer_radius)
-        construction_arc_inner = Arc(Point.polar(-angle/2.0, inner_radius), Point.polar(angle/2.0, inner_radius), inner_radius)
-        construction_point_outer = construction_line_right.intersect(construction_arc_outer)
-        construction_point_inner = construction_line_right.intersect(construction_arc_inner)
-        start_point = construction_arc_outer.midpoint()
-        end_point = construction_arc_inner.midpoint()
-        while outer_fillet_radius < outer_radius and inner_fillet_radius < inner_radius:
-            path = Path(start_point)
-            path.append_arc(construction_point_outer, outer_radius, anticlockwise=False)
-            path.append_segment(construction_point_inner, fillet_radius=outer_fillet_radius)
-            outer_fillet = Arc(path.elements[-3].p2, path.elements[-2].p2, radius=outer_fillet_radius)
-            path.append_arc(end_point, inner_radius, anticlockwise=True, fillet_radius=inner_fillet_radius)
-            inner_fillet = Arc(path.elements[-3].p2, path.elements[-2].p2, radius=inner_fillet_radius)
-            modified = False
-            if outer_via.distance(outer_fillet) <= trace_width / 2.0 + trace_spacing:
-                outer_fillet_radius += 0.1
-                modified = True
-            if inner_via.distance(inner_fillet) <= trace_width / 2.0 + trace_width:
-                inner_fillet_radius += 0.1
-                modified = True
-            if not modified:
-                break
+        outer_fillet_radius, success = Coil._compute_fillet(
+            arc_radius = outer_radius,
+            opposite_radius = inner_radius,
+            angle = angle,
+            initial_fillet_radius = trace_width * 2,
+            via = outside_vias[CoilConnection.OUTSIDE_OUTER_RIGHT_VIA],
+            trace_width = trace_width,
+            trace_spacing = trace_spacing,
+            construction_geometry = construction_geometry,
+        )
+        if not success:
+            print("Warning : unable to compute a fillet for the outer side of the coil, check for collision with the via and try increasing outer_vias_offset")
+        
+        # Same calculation for the inner fillet radius
+        inner_fillet_radius, success = Coil._compute_fillet(
+            arc_radius = inner_radius,
+            opposite_radius = outer_radius,
+            angle = angle,
+            initial_fillet_radius = trace_width * 2,
+            via = outside_vias[CoilConnection.OUTSIDE_INNER_RIGHT_VIA],
+            trace_width = trace_width,
+            trace_spacing = trace_spacing,
+            construction_geometry = construction_geometry,
+        )
+        if not success:
+            print("Warning : unable to compute a fillet for the inner side of the coil, check for collision with the via and try increasing inner_vias_offset")
 
+        # Calculate the spiral of the coil
         outer_radius_initial = outer_radius
         inner_radius_initial = inner_radius
         line_left = Line.from_two_points(Point.origin(), Point.polar(-angle/2.0, outer_radius)).offset(loop_offset * 0.5 + outer_fillet_radius)
@@ -283,7 +283,7 @@ class Coil:
         path = Path(point_start)
         n_turns = 0
         collision_via = None
-        for i in range(max_turns or 1000):
+        for i in range(max_turns):
             # Construction geometry
             line_left = Line.from_two_points(Point.origin(), Point.polar(-angle/2.0, outer_radius)).offset(loop_offset * (i + 0.5))
             line_right = Line.from_two_points(Point.origin(), Point.polar(angle/2.0, outer_radius)).offset(-loop_offset * (i + 0.5))
@@ -367,14 +367,17 @@ class Coil:
                 # Replace the first element in the path with a corner connected to the terminal
                 projected = terminal.center.projected(path.first_geometry())
                 replaced_element = path.pop_first()
+                terminal_fillet_radius = 0.3
+                if path.start_point.x < terminal_fillet_radius:
+                    terminal_fillet_radius = None # There is no room for the fillet
                 match replaced_element:
                     case PathSegment():
                         path.prepend_segment(projected)
-                        path.prepend_segment(terminal.center, fillet_radius=0.3)
+                        path.prepend_segment(terminal.center, fillet_radius=terminal_fillet_radius)
 
                     case PathArc():
                         path.prepend_arc(projected, replaced_element.radius, replaced_element.anticlockwise)
-                        path.prepend_segment(terminal.center, fillet_radius=0.3)
+                        path.prepend_segment(terminal.center, fillet_radius=terminal_fillet_radius)
 
             else:
                 # Via to connect to
@@ -450,6 +453,54 @@ class Coil:
 
         self.path.draw_svg(drawing, color, opacity, thickness, dashes)
         return self
+    
+    def _compute_fillet(
+            arc_radius: float,
+            opposite_radius: float,
+            angle: float,
+            initial_fillet_radius: float,
+            via: Via,
+            trace_width: float,
+            trace_spacing: float,
+            construction_geometry = None
+        ) -> tuple[float, bool]:
+        radius = initial_fillet_radius
+        arc = Arc(Point.polar(-angle/2.0, arc_radius), Point.polar(angle/2.0, arc_radius), arc_radius)
+        segment_base = Segment(Point.polar(angle/2.0, opposite_radius), Point.polar(angle/2.0, arc_radius))
+        segment = segment_base.offset_closest_to(arc.p1, (trace_spacing + trace_width) * 0.5)
+        corner = segment.intersect(arc)
+        start_point = arc.midpoint()
+        end_point = segment.midpoint()
+        while radius < arc_radius:
+            # Try a fillet with its radius increased by 10% or the width of a trace, whichever is larger
+            try_fillet_radius = max(radius * 0.1, radius + trace_width)
+
+            # Construct a path with half an outer arc and half a right segment, and a fillet of the current radius in the middle
+            path = Path(start_point)
+            path.append_arc(corner, arc_radius, anticlockwise=False)
+            path.append_segment(end_point, fillet_radius=try_fillet_radius, suppress_warning=True)
+
+            # Get the actual fillet radius and construct an arc at the same place as the fillet
+            fillet_real_radius = path.elements[-2].radius
+            fillet_arc_p1 = path.elements[-3].p2
+            fillet_arc_p2 = path.elements[-2].p2
+            anticlockwise_fillet = Vector.from_two_points(corner, fillet_arc_p1).cross(Vector.from_two_points(corner, fillet_arc_p2)) < 0
+            fillet_arc = Arc(fillet_arc_p1, fillet_arc_p2, radius=fillet_real_radius, reverse=anticlockwise_fillet)
+
+            # Check if the fillet has the same radius as the one we are trying to make
+            if not math.isclose(try_fillet_radius, fillet_real_radius, abs_tol=1e-9):
+                return radius, False
+
+            # Check if the end of the fillet is too close to the center line
+            if fillet_arc.p2.x < trace_width * 2.0:
+                return radius, False
+
+            # Check if the fillet is large enough to prevent a collision with the via
+            if via.distance(fillet_arc) >= trace_width / 2.0 + trace_spacing:
+                return try_fillet_radius, True
+
+            # This radius looks ok, save it and try again with a larger one
+            radius = try_fillet_radius
 
 class Link:
     """A trace on the board linking two coils"""
@@ -647,6 +698,8 @@ class PCB:
         outside_vias = {}
         for point, tag in points:
             outside_vias[tag] = Via(point, config.via_diameter, config.via_hole_diameter, tag=tag)
+        if outside_vias[CoilConnection.OUTSIDE_INNER_LEFT_VIA].distance(outside_vias[CoilConnection.OUTSIDE_INNER_RIGHT_VIA]) < 0:
+            print("Warning : collision between the outside inner vias")
         
         # Terminal
         terminal = None

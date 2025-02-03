@@ -13,6 +13,7 @@ config = Config(
     board_inner_margin = 1.0, # mm
     n_phases = 3,
     n_slots_per_phase = 2,
+    coil_angle = None,
     n_layers = 8,
     max_turns_per_layer = None,
     trace_width = 0.1, # mm

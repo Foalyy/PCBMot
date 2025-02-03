@@ -16,6 +16,7 @@ class Config:
         board_inner_margin: float,
         n_phases: int,
         n_slots_per_phase: int,
+        coil_angle: float,
         n_layers: int,
         max_turns_per_layer: int,
         trace_width: float,
@@ -41,8 +42,14 @@ class Config:
         svg_profile: str,
     ):
         # Check parameters
+        if board_diameter <= 0:
+            raise ValueError("The board diameter must be positive")
+        if hole_diameter <= 0:
+            raise ValueError("The hole diameter must be positive")
         if hole_diameter + board_inner_margin >= board_diameter - board_outer_margin:
             raise ValueError("The board diameter is smaller than the hole diameter")
+        if not (n_slots_per_phase >= 1 and (n_slots_per_phase == 1 or n_slots_per_phase % 2 == 0)):
+            raise ValueError("The number of slots per phase must be 1 or an even number")
         if n_layers not in [2, 4, 6, 8]:
             raise ValueError("The number of layers must be 2, 4, 6 or 8")
         
@@ -53,6 +60,7 @@ class Config:
         self.board_inner_margin: float = board_inner_margin
         self.n_phases: int = n_phases
         self.n_slots_per_phase: int = n_slots_per_phase
+        self.coil_angle: float = coil_angle
         self.n_layers: int = n_layers
         self.max_turns_per_layer: int = max_turns_per_layer
         self.trace_width: float = trace_width
@@ -84,7 +92,10 @@ class Config:
         self.hole_radius: float = self.hole_diameter/2
         self.via_diameter_w_spacing: float = self.via_diameter + self.trace_spacing
         self.n_coils: int = self.n_phases * self.n_slots_per_phase
-        self.coil_angle: float = 360.0 / self.n_coils
+        if self.max_turns_per_layer is None:
+            self.max_turns_per_layer: float = 1000
+        if self.coil_angle is None:
+            self.coil_angle: float = 360.0 / self.n_coils
 
         # SVG style
         self.background_color = "#001023"

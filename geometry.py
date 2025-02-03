@@ -556,6 +556,14 @@ class Segment(DrawableObject):
         p1_offset = self.p1.offset(self.line().perpendicular(self.p1), distance)
         p2_offset = self.p2 + Vector.from_two_points(self.p1, p1_offset)
         return Segment(p1_offset, p2_offset)
+    
+    def offset_closest_to(self, point: Point, distance: float) -> Self:
+        """Create a new Segment parallel to this Segment separated by the given distance and is the closest to the given Point
+
+        The sign of the given offset is ignored, the function will compute the offsets in the two directions and return the
+        offset segment closest to the given Point.
+        """
+        return point.closest([self.offset(distance), self.offset(-distance)])
 
     def tangent_arc_through_point(self, point: Point, at_start: bool = False) -> "Arc":
         """Return an Arc tangeant to this Segment at one of its endpoint that passes through the given Point
@@ -886,7 +894,7 @@ class Fillet:
         self.anticlockwise_arc: bool = anticlockwise_arc
         self.shrinked: bool = shrinked
 
-    def segment_to_segment(p_prev: Point, p_mid: Point, p_next: Point, fillet_radius: float) -> Self:
+    def segment_to_segment(p_prev: Point, p_mid: Point, p_next: Point, fillet_radius: float, suppress_warning: bool = False) -> Self:
         """Compute the Fillet between two connected segments
 
         The segments are represented respectively by (p_prev, p_mid) and (p_mid, p_next),
@@ -911,6 +919,7 @@ class Fillet:
             return None
         
         shrinked = False
+        warning_displayed = False
         for i in range(3):
             # Compute the center of the fillet by offseting each of the two lines on the direction of the opposite point,
             # then taking the intersection between them
@@ -930,7 +939,9 @@ class Fillet:
             cut = False
             if v_fillet_prev.length() >= v_prev.length():
                 # Compute a new pair of fillet endpoints that are inside the prev segment
-                print("Warning : fillet too big for the previous line, cutting the fillet")
+                if not warning_displayed and not suppress_warning:
+                    print("Warning : segment-to-segment fillet too big for the previous line, cutting the fillet")
+                    warning_displayed = True
                 length_1 = v_fillet_prev.length()
                 p_fillet_prev = p_mid + v_prev * 0.9
                 v_fillet_prev = Vector.from_two_points(p_mid, p_fillet_prev)
@@ -942,7 +953,9 @@ class Fillet:
                 shrinked = True
             if v_fillet_next.length() >= v_next.length():
                 # Compute a new pair of fillet endpoints that are inside the next segment
-                print("Warning : fillet too big for the next line, cutting the fillet")
+                if not warning_displayed and not suppress_warning:
+                    print("Warning : segment-to-segment fillet too big for the next line, cutting the fillet")
+                    warning_displayed = True
                 length_1 = v_fillet_next.length()
                 p_fillet_next = p_mid + v_next * 0.9
                 v_fillet_next = Vector.from_two_points(p_mid, p_fillet_next)
@@ -960,10 +973,6 @@ class Fillet:
                 fillet_radius = new_center.distance(line_prev)
                 continue
             
-            # p_fillet_prev.draw_svg(dwg)
-            # p_fillet_next.draw_svg(dwg)
-            # Arc(p_fillet_prev, p_fillet_next, fillet_radius).draw_svg(dwg)
-            
             # The points are kept in the order of the path, so we must return a separate flag
             # to indicate an anticlockwise arc direction
             anticlockwise_fillet_arc = v_prev.cross(v_next) < 0
@@ -971,7 +980,7 @@ class Fillet:
             # Return the two endpoints of the fillet, its finale radius, and the anticlockwise flag
             return Fillet(p_fillet_prev, p_fillet_next, fillet_radius, anticlockwise_fillet_arc, shrinked)
 
-    def segment_to_arc(p_prev: Point, p_mid: Point, p_next: Point, arc_radius: float, anticlockwise: bool, fillet_radius: float) -> Self:
+    def segment_to_arc(p_prev: Point, p_mid: Point, p_next: Point, arc_radius: float, anticlockwise: bool, fillet_radius: float, suppress_warning: bool = False) -> Self:
         """Compute the Fillet between a segment connected to an arc of the given radius
 
         The segment and the arc are represented respectively by (p_prev, p_mid) and (p_mid, p_next),
@@ -984,16 +993,16 @@ class Fillet:
 
         warning_displayed = False
 
-        # Shrink the fillet radius a first time of it larger than the segment or the arc
+        # Shrink the fillet radius a first time if it is larger than the segment or the arc
         segment_length = p_prev.distance(p_mid)
         if fillet_radius > segment_length:
-            if not warning_displayed:
-                print("Warning : fillet too big for the given geometry, cutting the fillet")
+            if not warning_displayed and not suppress_warning:
+                print("Warning : segment-to-arc fillet too big for the given geometry, cutting the fillet")
                 warning_displayed = True
             fillet_radius = segment_length
         if fillet_radius > arc_radius:
-            if not warning_displayed:
-                print("Warning : fillet too big for the given geometry, cutting the fillet")
+            if not warning_displayed and not suppress_warning:
+                print("Warning : segment-to-arc fillet too big for the given geometry, cutting the fillet")
                 warning_displayed = True
             fillet_radius = arc_radius
 
@@ -1013,8 +1022,8 @@ class Fillet:
                 if fillet_center is not None:
                     break
                 else:
-                    if not warning_displayed:
-                        print("Warning : fillet too big for the given geometry")
+                    if not warning_displayed and not suppress_warning:
+                        print("Warning : segment-to-arc fillet too big for the given geometry")
                         warning_displayed = True
                     fillet_radius -= 0.1
             if math.isclose(fillet_radius, 0.0, abs_tol=1e-9):
@@ -1034,8 +1043,8 @@ class Fillet:
             # TODO : replace the 'factor' calculation with something more robust
             if v_fillet_prev.length() >= v_prev.length():
                 # Compute a new pair of fillet endpoints that are inside the prev segment
-                if not warning_displayed:
-                    print("Warning : fillet too big for the previous line, cutting the fillet")
+                if not warning_displayed and not suppress_warning:
+                    print("Warning : segment-to-arc fillet too big for the previous line, cutting the fillet")
                     warning_displayed = True
                 length_1 = v_fillet_prev.length()
                 p_fillet_prev = (p_mid + v_prev * 0.9)
@@ -1048,12 +1057,16 @@ class Fillet:
                 shrinked = True
             if arc_fillet_next.length() >= arc_next.length():
                 # Compute a new pair of fillet endpoints that are inside the next arc
-                if not warning_displayed:
-                    print("Warning : fillet too big for the next line, cutting the fillet")
+                if not warning_displayed and not suppress_warning:
+                    print("Warning : segment-to-arc fillet too big for the next line, cutting the fillet")
                     warning_displayed = True
                 length_1 = arc_fillet_next.length()
-                arc_fillet_next = arc_fillet_next * 0.7
-                p_fillet_next = arc_fillet_next.p2
+                if anticlockwise:
+                    arc_fillet_next = Arc(arc_next.p2.rotated(arc_next.center(), - arc_next.angle() * 0.9), arc_next.p2, arc_next.radius)
+                    p_fillet_next = arc_fillet_next.p1
+                else:
+                    arc_fillet_next = Arc(arc_next.p1, arc_next.p1.rotated(arc_next.center(), arc_next.angle() * 0.9), arc_next.radius)
+                    p_fillet_next = arc_fillet_next.p2
                 length_2 = arc_fillet_next.length()
                 factor = length_2 / length_1
                 v_fillet_prev = v_fillet_prev * factor
@@ -1066,12 +1079,8 @@ class Fillet:
                 l2 = arc_next.radial_line(p_fillet_next)
                 new_center = l1.intersect(l2)
                 fillet_radius = min(new_center.distance(line_prev), new_center.distance(arc_next))
-                Arc(p_fillet_prev, p_fillet_next, fillet_radius, reverse=anticlockwise)
+                # Arc(p_fillet_prev, p_fillet_next, fillet_radius, reverse=anticlockwise)
                 continue
-            
-            # p_fillet_prev.draw_svg(dwg)
-            # p_fillet_next.draw_svg(dwg)
-            # Arc(p_fillet_prev, p_fillet_next, fillet_radius).draw_svg(dwg)
 
             # The points are kept in the order of the path, so we must return a separate flag
             # to indicate an anticlockwise arc direction
@@ -1080,7 +1089,7 @@ class Fillet:
             # Return the two endpoints of the fillet, its finale radius, and the anticlockwise flag
             return Fillet(p_fillet_prev, p_fillet_next, fillet_radius, anticlockwise_arc, shrinked)
 
-    def arc_to_segment(p_prev: Point, p_mid: Point, p_next: Point, arc_radius: float, anticlockwise: bool, fillet_radius: float) -> Self:
+    def arc_to_segment(p_prev: Point, p_mid: Point, p_next: Point, arc_radius: float, anticlockwise: bool, fillet_radius: float, suppress_warning: bool = False) -> Self:
         """Compute the Fillet between an arc of the given radius connected to a segment
 
         The arc and the segment are represented respectively by (p_prev, p_mid) and (p_mid, p_next),
@@ -1092,7 +1101,7 @@ class Fillet:
         """
 
         # Create the equivalent Fillet from the segment to the arc, and reverse it
-        fillet = Fillet.segment_to_arc(p_next, p_mid, p_prev, arc_radius, not anticlockwise, fillet_radius)
+        fillet = Fillet.segment_to_arc(p_next, p_mid, p_prev, arc_radius, not anticlockwise, fillet_radius, suppress_warning)
         if fillet is None:
             return None
         fillet.p_arc_prev, fillet.p_arc_next = fillet.p_arc_next, fillet.p_arc_prev
@@ -1170,7 +1179,7 @@ class Path(DrawableObject):
         else:
             return None
     
-    def append_segment(self, to_point: Point, fillet_radius: float = None, tag = None):
+    def append_segment(self, to_point: Point, fillet_radius: float = None, tag = None, suppress_warning: bool = False):
         """Append a new segment at the end of this Path, with an optional fillet"""
 
         if to_point == self.end_point:
@@ -1188,7 +1197,7 @@ class Path(DrawableObject):
             match last_element:
                 case PathSegment():
                     # Compute the fillet
-                    fillet = Fillet.segment_to_segment(p_prev, p_mid, p_next, fillet_radius)
+                    fillet = Fillet.segment_to_segment(p_prev, p_mid, p_next, fillet_radius, suppress_warning)
 
                     if fillet is not None:
                         # Replace the last segment with the fillet
@@ -1199,7 +1208,7 @@ class Path(DrawableObject):
                 
                 case PathArc():
                     # Compute the fillet
-                    fillet = Fillet.arc_to_segment(p_prev, p_mid, p_next, last_element.radius, last_element.anticlockwise, fillet_radius)
+                    fillet = Fillet.arc_to_segment(p_prev, p_mid, p_next, last_element.radius, last_element.anticlockwise, fillet_radius, suppress_warning)
 
                     if fillet is not None:
                         # Replace the last arc with the fillet
@@ -1211,7 +1220,7 @@ class Path(DrawableObject):
         self.elements.append(PathSegment(to_point, tag))
         self.end_point = to_point
     
-    def prepend_segment(self, to_point: Point, fillet_radius: float = None, tag = None):
+    def prepend_segment(self, to_point: Point, fillet_radius: float = None, tag = None, suppress_warning: bool = False):
         """Append a new segment at the beginning of this Path, with an optional fillet"""
 
         if to_point == self.end_point:
@@ -1229,7 +1238,7 @@ class Path(DrawableObject):
             match first_element:
                 case PathSegment():
                     # Compute the fillet
-                    fillet = Fillet.segment_to_segment(p_prev, p_mid, p_next, fillet_radius)
+                    fillet = Fillet.segment_to_segment(p_prev, p_mid, p_next, fillet_radius, suppress_warning)
 
                     if fillet is not None:
                         # Add the fillet at the beginning of the path
@@ -1238,7 +1247,7 @@ class Path(DrawableObject):
                 
                 case PathArc():
                     # Compute the fillet
-                    fillet = Fillet.arc_to_segment(p_prev, p_mid, p_next, first_element.radius, first_element.anticlockwise, fillet_radius)
+                    fillet = Fillet.arc_to_segment(p_prev, p_mid, p_next, first_element.radius, first_element.anticlockwise, fillet_radius, suppress_warning)
 
                     if fillet is not None:
                         # Add the fillet at the beginning of the path
@@ -1248,7 +1257,7 @@ class Path(DrawableObject):
         self.elements.insert(0, PathSegment(self.start_point, tag))
         self.start_point = to_point
     
-    def append_arc(self, to_point: Point, radius: float, anticlockwise: bool, fillet_radius: float = None, tag = None):
+    def append_arc(self, to_point: Point, radius: float, anticlockwise: bool, fillet_radius: float = None, tag = None, suppress_warning: bool = False):
         """Append a new arc of the given radius at the end of this Path, with an optional fillet"""
 
         if to_point == self.end_point:
@@ -1266,7 +1275,7 @@ class Path(DrawableObject):
             match last_element:
                 case PathSegment():
                     # Compute the fillet
-                    fillet = Fillet.segment_to_arc(p_prev, p_mid, p_next, radius, anticlockwise, fillet_radius)
+                    fillet = Fillet.segment_to_arc(p_prev, p_mid, p_next, radius, anticlockwise, fillet_radius, suppress_warning)
 
                     if fillet is not None:
                         # Replace the last segment with the fillet
@@ -1281,7 +1290,7 @@ class Path(DrawableObject):
         self.elements.append(PathArc(to_point, radius, anticlockwise, tag))
         self.end_point = to_point
     
-    def prepend_arc(self, to_point: Point, radius: float, anticlockwise: bool, fillet_radius: float = None, tag = None):
+    def prepend_arc(self, to_point: Point, radius: float, anticlockwise: bool, fillet_radius: float = None, tag = None, suppress_warning: bool = False):
         """Append a new arc of the given radius at the beginning of this Path, with an optional fillet"""
 
         if to_point == self.end_point:
@@ -1299,7 +1308,7 @@ class Path(DrawableObject):
             match first_element:
                 case PathSegment():
                     # Compute the fillet
-                    fillet = Fillet.segment_to_arc(p_prev, p_mid, p_next, radius, anticlockwise, fillet_radius)
+                    fillet = Fillet.segment_to_arc(p_prev, p_mid, p_next, radius, anticlockwise, fillet_radius, suppress_warning)
 
                     if fillet is not None:
                         # Add the fillet at the beginning of the path
