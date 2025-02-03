@@ -30,8 +30,10 @@ class Config:
         terminal_hole_diameter: float,
         terminal_offset: float,
         link_series_coils: bool,
-        series_link_trace_width: float,
-        series_link_offset: float,
+        series_link_inner_trace_width: float,
+        series_link_outer_trace_width: float,
+        series_link_inner_offset: float,
+        series_link_outer_offset: float,
         link_com: bool,
         com_link_trace_width: float,
         com_link_offset: float,
@@ -52,6 +54,10 @@ class Config:
             raise ValueError("The number of slots per phase must be 1 or an even number")
         if n_layers not in [2, 4, 6, 8]:
             raise ValueError("The number of layers must be 2, 4, 6 or 8")
+        if link_series_coils and n_phases > n_layers:
+            raise ValueError("Unable to generate the connections between the coils because the number of layers should be greater than or equal to the number of phases, either increase the number of layers or disable link_series_coils")
+        if terminal_type not in [TerminalType.NONE, TerminalType.THROUGH_HOLE, TerminalType.SMD, TerminalType.CASTELLATED]:
+            raise ValueError("Invalid terminal type")
         
         # Save parameters
         self.board_diameter: float = board_diameter
@@ -74,8 +80,10 @@ class Config:
         self.terminal_hole_diameter: float = terminal_hole_diameter
         self.terminal_offset: float = terminal_offset
         self.link_series_coils: bool = link_series_coils
-        self.series_link_trace_width: float = series_link_trace_width
-        self.series_link_offset: float = series_link_offset
+        self.series_link_inner_trace_width: float = series_link_inner_trace_width
+        self.series_link_outer_trace_width: float = series_link_outer_trace_width
+        self.series_link_inner_offset: float = series_link_inner_offset
+        self.series_link_outer_offset: float = series_link_outer_offset
         self.link_com: bool = link_com
         self.com_link_trace_width: float = com_link_trace_width
         self.com_link_offset: float = com_link_offset
@@ -96,6 +104,7 @@ class Config:
             self.max_turns_per_layer: float = 1000
         if self.coil_angle is None:
             self.coil_angle: float = 360.0 / self.n_coils
+        self.layers = ['top', 'in1', 'in2', 'in3', 'in4', 'in5', 'in6', 'bottom']
 
         # SVG style
         self.background_color = "#001023"
@@ -116,5 +125,7 @@ class Config:
         }
         self.via_color = "#ECECEC"
         self.via_hole_color = "#E3B72E"
+        self.via_opacity = 1.0
         self.terminal_color = "#E6B631"
         self.terminal_hole_color = self.background_color
+        self.terminal_opacity = 1.0

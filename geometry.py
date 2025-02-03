@@ -126,7 +126,7 @@ class Vector:
         return 90 - atan2(self.y, self.x)
     
     def length(self) -> float:
-        """Return the angle of the polar coordinates of this Vector"""
+        """Return the length (norm) of this Vector"""
         return math.hypot(self.x, self.y)
     
     def from_tuple(p: tuple[float, float]) -> Self:
@@ -495,10 +495,21 @@ class Segment(DrawableObject):
     def as_vector(self) -> Vector:
         """Return the Vector going from p1 pointing to p2"""
         return Vector.from_two_points(self.p1, self.p2)
+    
+    def length(self) -> float:
+        """Return the length of this Segment"""
+        return self.p1.distance(self.p2)
 
     def angle(self) -> float:
         """Return the angle of this Segment in the range [-90°:90°] relative to the vertical axis"""
         return self.line().angle()
+    
+    def unit_vector(self) -> Vector:
+        """Return a new Vector of length 1 parallel to this line
+        
+        The direction of the vector is not guaranteed.
+        """
+        return Vector.from_two_points(self.p1, self.p2.closest(self.intersect(Circle(self.p1, 1.0))))
     
     def is_parallel(self, other: Self) -> bool:
         """Check if this Segment is parallel with the given Segment or Line"""
@@ -1247,7 +1258,7 @@ class Path(DrawableObject):
                 
                 case PathArc():
                     # Compute the fillet
-                    fillet = Fillet.arc_to_segment(p_prev, p_mid, p_next, first_element.radius, first_element.anticlockwise, fillet_radius, suppress_warning)
+                    fillet = Fillet.segment_to_arc(p_prev, p_mid, p_next, first_element.radius, first_element.anticlockwise, fillet_radius, suppress_warning)
 
                     if fillet is not None:
                         # Add the fillet at the beginning of the path

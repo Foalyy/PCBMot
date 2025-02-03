@@ -28,6 +28,7 @@ class CoilConnection(Enum):
     def match_side(connection: Self, side: CoilSide) -> bool:
         """Return True if the given connection point could be connected to the given side, assuming a clockwise coil"""
         return \
+            connection is None and side == CoilSide.OUTER or \
             connection == CoilConnection.TERMINAL and side == CoilSide.OUTER or \
             connection == CoilConnection.OUTSIDE_OUTER_LEFT_VIA and side == CoilSide.OUTER or \
             connection == CoilConnection.OUTSIDE_OUTER_RIGHT_VIA and side == CoilSide.RIGHT or \
@@ -90,7 +91,7 @@ class Via:
         """Create a copy of this Via mirrored about the Y axis"""
         return Via(self.center.mirrored_y(), self.diameter, self.hole_diameter)
     
-    def draw_svg(self, drawing: svg.Drawing, via_color: str, hole_color: str):
+    def draw_svg(self, drawing: svg.Drawing, via_color: str, hole_color: str, opacity: float = 1.0):
         """Draw this Via on the given SVG drawing
         
         This method returns self and can therefore be chained."""
@@ -101,7 +102,7 @@ class Via:
             self.diameter / 2.0,
             stroke = "none",
             fill = via_color,
-            opacity = 1.0,
+            opacity = opacity,
         ))
 
         # Draw the hole
@@ -110,7 +111,7 @@ class Via:
             self.hole_diameter / 2.0,
             stroke = "none",
             fill = hole_color,
-            opacity = 1.0,
+            opacity = opacity,
         ))
 
         return self
@@ -163,7 +164,7 @@ class Terminal:
         """Create a copy of this Terminal mirrored about the Y axis"""
         return Terminal(self.center.mirrored_y(), self.terminal_type, self.diameter, self.hole_diameter)
     
-    def draw_svg(self, drawing: svg.Drawing, pad_color: str, hole_color: str, clip_path_id = None):
+    def draw_svg(self, drawing: svg.Drawing, pad_color: str, hole_color: str, opacity: float = 1.0, clip_path_id = None):
         """Draw this Terminal on the given SVG drawing
         
         This method returns self and can therefore be chained."""
@@ -178,7 +179,7 @@ class Terminal:
                 self.diameter / 2.0,
                 stroke = "none",
                 fill = pad_color,
-                opacity = 1.0,
+                opacity = opacity,
                 clip_path = f"url(#{clip_path_id})" if clip_path_id is not None else None,
             ))
         else:
@@ -187,7 +188,7 @@ class Terminal:
                 self.diameter / 2.0,
                 stroke = "none",
                 fill = pad_color,
-                opacity = 1.0,
+                opacity = opacity,
             ))
 
         # Draw the hole
@@ -198,7 +199,7 @@ class Terminal:
                     self.hole_diameter / 2.0,
                     stroke = "none",
                     fill = hole_color,
-                    opacity = 1.0,
+                    opacity = opacity,
                     clip_path = f"url(#{clip_path_id})" if clip_path_id is not None else None,
                 ))
             else:
@@ -207,7 +208,7 @@ class Terminal:
                     self.hole_diameter / 2.0,
                     stroke = "none",
                     fill = hole_color,
-                    opacity = 1.0,
+                    opacity = opacity,
                 ))
 
         return self
@@ -215,11 +216,13 @@ class Terminal:
 class Coil:
     """A single coil on the board"""
 
-    def __init__(self, path: Path, n_turns: int):
+    def __init__(self, path: Path, rotation: float, n_turns: int):
         self.path: Path = path
+        self.rotation: float = rotation
         self.n_turns: int = n_turns
 
     def generate(
+            board_center: Point,
             angle: float,
             outer_radius: float,
             inner_radius: float,
@@ -232,6 +235,7 @@ class Coil:
             outside_connection: CoilConnection,
             inside_connection: CoilConnection,
             max_turns: int,
+            max_outside_connection_length: float,
             construction_geometry: list,
         ) -> Self:
         """Generate a coil centered around the vertical axis based on the given parameters"""
@@ -277,7 +281,7 @@ class Coil:
         # Calculate the spiral of the coil
         outer_radius_initial = outer_radius
         inner_radius_initial = inner_radius
-        line_left = Line.from_two_points(Point.origin(), Point.polar(-angle/2.0, outer_radius)).offset(loop_offset * 0.5 + outer_fillet_radius)
+        line_left = Line.from_two_points(board_center, Point.polar(-angle/2.0, outer_radius)).offset(loop_offset * 0.5 + outer_fillet_radius)
         arc_outer = Arc(Point.polar(-angle/2.0, outer_radius), Point.polar(angle/2.0, outer_radius), outer_radius)
         point_start = line_left.intersect(arc_outer)
         path = Path(point_start)
@@ -285,8 +289,8 @@ class Coil:
         collision_via = None
         for i in range(max_turns):
             # Construction geometry
-            line_left = Line.from_two_points(Point.origin(), Point.polar(-angle/2.0, outer_radius)).offset(loop_offset * (i + 0.5))
-            line_right = Line.from_two_points(Point.origin(), Point.polar(angle/2.0, outer_radius)).offset(-loop_offset * (i + 0.5))
+            line_left = Line.from_two_points(board_center, Point.polar(-angle/2.0, outer_radius)).offset(loop_offset * (i + 0.5))
+            line_right = Line.from_two_points(board_center, Point.polar(angle/2.0, outer_radius)).offset(-loop_offset * (i + 0.5))
             arc_outer = Arc(Point.polar(-angle/2.0, outer_radius), Point.polar(angle/2.0, outer_radius), outer_radius)
             inner_radius = inner_radius_initial + i * loop_offset
             arc_inner = Arc(Point.polar(-angle/2.0, inner_radius), Point.polar(angle/2.0, inner_radius), inner_radius)
@@ -351,51 +355,62 @@ class Coil:
             n_turns += 1
 
         # Connect the start of the coil to the requested via or terminal
-        if outside_connection is not None:
+        while not CoilConnection.match_side(outside_connection, path.first().tag):
             # Pop the first elements from the path until we find the one that should be connected to the target via or terminal
-            while not CoilConnection.match_side(outside_connection, path.first().tag):
-                path.pop_first()
-                path.pop_first() # Fillet
-                if len(path.elements) == 1:
-                    raise ValueError("Cannot find path element to connect to requested outside connection")
-
-            if outside_connection == CoilConnection.TERMINAL:
-                # Check that a terminal was provided
-                if terminal is None:
-                    raise ValueError("Unable to connect a coil to a non-existant terminal")
-            
-                # Replace the first element in the path with a corner connected to the terminal
-                projected = terminal.center.projected(path.first_geometry())
-                replaced_element = path.pop_first()
-                terminal_fillet_radius = 0.3
-                if path.start_point.x < terminal_fillet_radius:
-                    terminal_fillet_radius = None # There is no room for the fillet
-                match replaced_element:
-                    case PathSegment():
-                        path.prepend_segment(projected)
-                        path.prepend_segment(terminal.center, fillet_radius=terminal_fillet_radius)
-
-                    case PathArc():
-                        path.prepend_arc(projected, replaced_element.radius, replaced_element.anticlockwise)
-                        path.prepend_segment(terminal.center, fillet_radius=terminal_fillet_radius)
-
+            path.pop_first()
+            path.pop_first() # Fillet
+            if len(path.elements) == 1:
+                raise ValueError("Error : unable to connect the outside of the coil to a via")
+        if outside_connection == CoilConnection.TERMINAL or outside_connection is None:
+            # Replace the first element in the path with a corner connected to the terminal
+            if terminal is not None:
+                corner = terminal.center.projected(path.first_geometry())
+                connection_point = terminal.center
+                connection_segment = Segment(corner, connection_point)
+                if connection_segment.length() > max_outside_connection_length:
+                    connection_point = corner + connection_segment.unit_vector() * max_outside_connection_length
             else:
-                # Via to connect to
-                try:
-                    target_via = outside_vias[outside_connection]
-                except KeyError:
-                    raise ValueError("Invalid outside_connection")
-                
-                # Connect the start of the coil to the target via
-                if outside_connection in [CoilConnection.OUTSIDE_OUTER_RIGHT_VIA, CoilConnection.OUTSIDE_INNER_LEFT_VIA]:
-                    segment = Segment(path.first().p2, path.start_point)
-                    tangent_arc = segment.tangent_arc_through_point(target_via.center)
-                    path.prepend_arc(target_via.center, tangent_arc.radius, anticlockwise = segment.p2 == tangent_arc.p1)
-                elif outside_connection in [CoilConnection.OUTSIDE_OUTER_LEFT_VIA, CoilConnection.OUTSIDE_INNER_RIGHT_VIA]:
-                    first = path.first()
-                    arc = Arc(path.first().p2, path.start_point, first.radius, reverse = not first.anticlockwise)
+                # If there is no terminal to connect to, simply add a stub to connect something later
+                point = Point(0, outer_radius_initial)
+                line = Line.from_two_points(board_center, point)
+                corner = path.first_geometry().intersect(line)
+                connection_point = point.offset(line, max_outside_connection_length)
+            replaced_element = path.pop_first()
+            fillet_radius = trace_width * 2
+            if path.start_point.x < fillet_radius:
+                fillet_radius = None # There is no room for the fillet
+            match replaced_element:
+                case PathSegment():
+                    path.prepend_segment(corner)
+                    path.prepend_segment(connection_point, fillet_radius=fillet_radius)
+
+                case PathArc():
+                    path.prepend_arc(corner, replaced_element.radius, replaced_element.anticlockwise)
+                    path.prepend_segment(connection_point, fillet_radius=fillet_radius)
+
+        else:
+            # Via to connect to
+            try:
+                target_via = outside_vias[outside_connection]
+            except KeyError:
+                raise ValueError("Invalid outside_connection")
+            
+            # Connect the start of the coil to the target via
+            if outside_connection in [CoilConnection.OUTSIDE_OUTER_RIGHT_VIA, CoilConnection.OUTSIDE_INNER_LEFT_VIA]:
+                segment = Segment(path.first().p2, path.start_point)
+                tangent_arc = segment.tangent_arc_through_point(target_via.center)
+                path.prepend_arc(target_via.center, tangent_arc.radius, anticlockwise = segment.p2 == tangent_arc.p1)
+            elif outside_connection in [CoilConnection.OUTSIDE_OUTER_LEFT_VIA, CoilConnection.OUTSIDE_INNER_RIGHT_VIA]:
+                first = path.first()
+                target_via_radius = board_center.distance(target_via.center)
+                if target_via_radius <= first.radius:
+                    # The via is inside the arc radius, connect it with a tangeant arc
+                    arc = Arc(first.p2, path.start_point, first.radius, reverse = not first.anticlockwise)
                     tangent_arc = arc.tangent_arc_through_point(target_via.center, at_start = not first.anticlockwise)
                     path.prepend_arc(target_via.center, tangent_arc.radius, anticlockwise = first.anticlockwise)
+                else:
+                    # The via is outside the arc radius, connect it with a fillet and a segment
+                    path.prepend_segment(target_via.center, fillet_radius = (target_via_radius - first.radius) / 2.0)
 
         # Connect the end of the coil to the requested via
         if inside_connection is not None:
@@ -409,42 +424,45 @@ class Coil:
             while not inside_connection.match_side(path.last().tag):
                 path.pop()
                 if len(path.elements) == 1:
-                    raise ValueError("Cannot find path element to connect to requested inside connection")
+                    raise ValueError("Error : unable to connect the inside of the coil to a via, try increasing hole_diameter")
             
             # Replace the last element in the path with a corner connected to the target via
             last_element = path.last_geometry()
             replaced_element = path.pop()
+            fillet_radius = trace_width * 2
             corner = target_via.center.projected(last_element)
+            if replaced_element.p2.distance(corner) < fillet_radius:
+                fillet_radius = None # There is no room for the fillet
             if not last_element.contains_point(corner):
                 corner = last_element.midpoint()
             match replaced_element:
                 case PathSegment():
                     path.append_segment(corner)
-                    path.append_arc(target_via.center, Point.origin().distance(target_via.center), anticlockwise=corner.x >= target_via.center.x, fillet_radius=0.2)
+                    path.append_arc(target_via.center, board_center.distance(target_via.center), anticlockwise=corner.x >= target_via.center.x, fillet_radius=fillet_radius)
 
                 case PathArc():
                     path.append_arc(corner, replaced_element.radius, replaced_element.anticlockwise)
-                    path.append_segment(target_via.center, fillet_radius=0.15)
+                    path.append_segment(target_via.center, fillet_radius=fillet_radius)
 
         # Return the coil based on this path, mirrored relative to the Y axis if anticlockwise
         if anticlockwise:
             path = path.mirrored_y()
-        return Coil(path, n_turns)
+        return Coil(path, 0.0, n_turns)
 
     def rotated(self, center: Self, angle: float) -> Self:
         """Create a copy of this Coil rotated around the given center point by the given angle"""
         path = self.path.rotated(center, angle)
-        return Coil(path, self.n_turns)
+        return Coil(path, self.rotation + angle, self.n_turns)
     
     def mirrored_x(self) -> Self:
         """Create a copy of this Coil mirrored about the X axis"""
         path = self.path.mirrored_x()
-        return Coil(path, self.n_turns)
+        return Coil(path, self.rotation, self.n_turns)
     
     def mirrored_y(self) -> Self:
         """Create a copy of this Coil mirrored about the Y axis"""
         path = self.path.mirrored_y()
-        return Coil(path, self.n_turns)
+        return Coil(path, -self.rotation, self.n_turns)
     
     def draw_svg(self, drawing: svg.Drawing, color=None, opacity=None, thickness=None, dashes=None):
         """Draw this Coil on the given SVG drawing
@@ -617,7 +635,7 @@ class PCB:
         coil_center_radius = ((config.board_radius - config.board_outer_margin) + (config.hole_radius + config.board_inner_margin)) / 2.0
         tangential_length = 2 * math.pi * coil_center_radius * config.coil_angle / 360.
         radial_length = (config.board_radius - config.board_outer_margin) - (config.hole_radius + config.board_inner_margin)
-        coil_B_center = Point(0, coil_center_radius)
+        coil_center = Point(0, coil_center_radius)
         step = config.trace_width / 10.0
         sep = 0.0
         if radial_length >= tangential_length:
@@ -628,8 +646,8 @@ class PCB:
 
                 # Compute the shape of the diamond
                 sep_test = sep + step
-                inside_outer_via = Via(coil_B_center + Vector(0, (config.via_diameter_w_spacing + sep_test) / 2.0), config.via_diameter, config.via_hole_diameter)
-                inside_inner_via = Via(coil_B_center - Vector(0, (config.via_diameter_w_spacing + sep_test) / 2.0), config.via_diameter, config.via_hole_diameter)
+                inside_outer_via = Via(coil_center + Vector(0, (config.via_diameter_w_spacing + sep_test) / 2.0), config.via_diameter, config.via_hole_diameter)
+                inside_inner_via = Via(coil_center - Vector(0, (config.via_diameter_w_spacing + sep_test) / 2.0), config.via_diameter, config.via_hole_diameter)
                 c1 = Circle(inside_outer_via.center, config.via_diameter_w_spacing)
                 c2 = Circle(inside_inner_via.center, config.via_diameter_w_spacing)
                 points = c1.intersect(c2)
@@ -654,8 +672,8 @@ class PCB:
                 if inside_via_3.distance(inside_via_4) < config.trace_spacing:
                     break
                 sep = sep_test
-        inside_outer_via = Via(coil_B_center + Vector(0, (config.via_diameter_w_spacing + sep) / 2.0), config.via_diameter, config.via_hole_diameter, tag=CoilConnection.INSIDE_OUTER_VIA)
-        inside_inner_via = Via(coil_B_center - Vector(0, (config.via_diameter_w_spacing + sep) / 2.0), config.via_diameter, config.via_hole_diameter, tag=CoilConnection.INSIDE_INNER_VIA)
+        inside_outer_via = Via(coil_center + Vector(0, (config.via_diameter_w_spacing + sep) / 2.0), config.via_diameter, config.via_hole_diameter, tag=CoilConnection.INSIDE_OUTER_VIA)
+        inside_inner_via = Via(coil_center - Vector(0, (config.via_diameter_w_spacing + sep) / 2.0), config.via_diameter, config.via_hole_diameter, tag=CoilConnection.INSIDE_INNER_VIA)
         c1 = Circle(inside_outer_via.center, config.via_diameter_w_spacing)
         c2 = Circle(inside_inner_via.center, config.via_diameter_w_spacing)
         points = c1.intersect(c2)
@@ -700,6 +718,13 @@ class PCB:
             outside_vias[tag] = Via(point, config.via_diameter, config.via_hole_diameter, tag=tag)
         if outside_vias[CoilConnection.OUTSIDE_INNER_LEFT_VIA].distance(outside_vias[CoilConnection.OUTSIDE_INNER_RIGHT_VIA]) < 0:
             print("Warning : collision between the outside inner vias")
+
+        # Copy the vias for all coils
+        for i in range(config.n_coils):
+            for via in inside_vias.values():
+                vias.append(via.rotated(board_center, 360.0 * i / config.n_coils))
+            for via in outside_vias.values():
+                vias.append(via.rotated(board_center, 360.0 * i / config.n_coils))
         
         # Terminal
         terminal = None
@@ -714,14 +739,20 @@ class PCB:
                 y = config.board_radius
                 terminal = Terminal(Point(0.0, y), config.terminal_type, config.terminal_diameter, config.terminal_hole_diameter)
 
-        # Copy the vias and terminals on all coils
-        for i in range(config.n_coils):
-            for via in inside_vias.values():
-                vias.append(via.rotated(board_center, 360.0 * i / config.n_coils))
-            for via in outside_vias.values():
-                vias.append(via.rotated(board_center, 360.0 * i / config.n_coils))
-            if terminal:
+        # Copy the terminals for all phases and the COM point
+        if terminal:
+            if config.link_series_coils:
+                n_terminals = config.n_phases
+            else:
+                n_terminals = config.n_coils
+            for i in range(n_terminals):
                 terminals.append(terminal.rotated(board_center, 360.0 * i / config.n_coils))
+            if config.link_series_coils:
+                if config.link_com:
+                    terminals.append(terminal.rotated(board_center, - 360.0 / config.n_coils))
+                else:
+                    for i in range(config.n_phases):
+                        terminals.append(terminal.rotated(board_center, 360.0 * -(i + 1) / config.n_coils))
 
         # Specific generation settings for each layer : coil direction and vias connections
         layers_specs = {
@@ -768,84 +799,155 @@ class PCB:
         }
 
         # Generate the coils on all layers
-        for layer_id, specs in layers_specs.items():
-            if config.draw_only_layers is None or layer_id in config.draw_only_layers:
-                # Generate the base Coil for this layer
-                coil_B = Coil.generate(
-                    angle = config.coil_angle,
-                    outer_radius = config.board_radius - config.board_outer_margin - config.trace_width / 2.0,
-                    inner_radius = config.hole_radius + config.board_inner_margin + config.trace_width / 2.0,
-                    anticlockwise = specs['anticlockwise'],
-                    trace_width = config.trace_width,
-                    trace_spacing = config.trace_spacing,
-                    outside_vias = outside_vias,
-                    inside_vias = inside_vias,
-                    terminal = terminal,
-                    outside_connection = specs['outside_connection'],
-                    inside_connection = specs['inside_connection'],
-                    max_turns = config.max_turns_per_layer,
-                    construction_geometry = construction_geometry,
-                )
+        coil_outside_connection_length = config.trace_width * 2
+        for layer_id in config.layers:
+            specs = layers_specs[layer_id]
 
-                # Generate the other coils by rotating and mirroring the base coil
-                # TODO : adapt for different number of coils
-                coil_A = coil_B.rotated(board_center, -config.coil_angle)
-                coil_C = coil_B.rotated(board_center, config.coil_angle)
-                coil_A2 = coil_C.mirrored_x()
-                coil_B2 = coil_B.mirrored_x()
-                coil_C2 = coil_A.mirrored_x()
+            # Generate the base Coil for this layer
+            coil_base = Coil.generate(
+                board_center = board_center,
+                angle = config.coil_angle,
+                outer_radius = config.board_radius - config.board_outer_margin - config.trace_width / 2.0,
+                inner_radius = config.hole_radius + config.board_inner_margin + config.trace_width / 2.0,
+                anticlockwise = specs['anticlockwise'],
+                trace_width = config.trace_width,
+                trace_spacing = config.trace_spacing,
+                outside_vias = outside_vias,
+                inside_vias = inside_vias,
+                terminal = terminal,
+                outside_connection = specs['outside_connection'],
+                inside_connection = specs['inside_connection'],
+                max_turns = config.max_turns_per_layer,
+                max_outside_connection_length = coil_outside_connection_length,
+                construction_geometry = construction_geometry,
+            )
+            coil_base_mirrored = coil_base.mirrored_y()
 
-                # Add these coils to the current layer
-                layers[layer_id] = [coil_A, coil_B, coil_C, coil_A2, coil_B2, coil_C2]
+            # Generate the other coils by rotating and mirroring the base coil
+            coils = []
+            for slot in range(config.n_slots_per_phase):
+                for phase in range(config.n_phases):
+                    coil_index = slot * config.n_phases + phase
+                    angle = 360.0 * coil_index / config.n_coils
+                    coil = coil_base
+                    if slot % 2 == 1:
+                        coil = coil.mirrored_y()
+                    coil = coil.rotated(board_center, angle)
+                    coils.append(coil)
 
-        # Link the coils that are in series, such as A with A'
-        if config.link_series_coils:
-            # TODO : adapt for different number of coils
-            connection_via_1 = outside_vias[layers_specs['bottom']['outside_connection']].center
-            connection_via_2 = connection_via_1.mirrored_x()
-            vias_circle_radius = board_center.distance(connection_via_1)
-            trace_center_radius = vias_circle_radius - config.via_diameter / 2.0 - config.trace_spacing - config.series_link_trace_width / 2.0 - config.series_link_offset
-            path = Path(connection_via_1)
-            if math.isclose(trace_center_radius, vias_circle_radius):
-                path.append_arc(connection_via_2, trace_center_radius, anticlockwise=False)
+            # Add these coils to the current layer
+            layers[layer_id] = coils
+
+        # Connect the coils that are in series, such as A_1 with A_2
+        link_vias = []
+        if config.link_series_coils and config.n_slots_per_phase >= 2:
+            if config.n_layers >= config.n_phases:
+                # Base path for inner connections (even coils)
+                # Draw a path offset toward the inner side of the board that connects these two points for the first coil
+                connection_point_1 = layers[config.layers[-1]][0].path.start_point
+                connection_point_2 = connection_point_1.mirrored_y().rotated(board_center, config.coil_angle * config.n_phases)
+                vias_circle_radius = board_center.distance(connection_point_1)
+                trace_center_radius = vias_circle_radius - config.via_diameter / 2.0 - config.trace_spacing - config.series_link_inner_trace_width / 2.0 - config.series_link_inner_offset
+                base_path_inner = Path(connection_point_1)
+                if math.isclose(trace_center_radius, vias_circle_radius):
+                    base_path_inner.append_arc(connection_point_2, trace_center_radius, anticlockwise=False)
+                else:
+                    circle = Circle(board_center, trace_center_radius)
+                    line1 = Line.from_two_points(board_center, connection_point_1)
+                    line2 = Line.from_two_points(board_center, connection_point_2)
+                    corner1 = connection_point_1.closest(line1.intersect(circle))
+                    corner2 = connection_point_2.closest(line2.intersect(circle))
+                    fillet_radius = connection_point_1.distance(corner1) / 2.0
+                    base_path_inner.append_segment(corner1)
+                    base_path_inner.append_arc(corner2, trace_center_radius, anticlockwise=False, fillet_radius=fillet_radius)
+                    base_path_inner.append_segment(connection_point_2, fillet_radius=fillet_radius)
+
+                # Base path for outer connections (odd coils)
+                # Draw a path offset toward the outer side of the board that connects these two points for the first coil
+                if config.n_slots_per_phase >= 4:
+                    connection_point_1 = layers[config.layers[0]][0].path.start_point
+                    connection_point_2 = connection_point_1.mirrored_y().rotated(board_center, config.coil_angle * config.n_phases)
+                    outer_vias_radius = config.board_radius - config.board_outer_margin + config.outer_vias_offset + config.trace_spacing + config.series_link_outer_trace_width / 2.0
+                    vias_circle_radius = config.board_radius - config.board_outer_margin + max(config.via_diameter / 2.0, config.series_link_outer_trace_width / 2.0) + config.trace_spacing
+                    trace_center_radius = max(vias_circle_radius + config.via_diameter / 2.0 + config.trace_spacing + config.series_link_outer_trace_width / 2.0, outer_vias_radius) + config.series_link_outer_offset
+                    circle_vias = Circle(board_center, vias_circle_radius)
+                    circle_trace = Circle(board_center, trace_center_radius)
+                    line1 = Line.from_two_points(board_center, connection_point_1)
+                    line2 = Line.from_two_points(board_center, connection_point_2)
+                    via_pos_1 = connection_point_1.closest(line1.intersect(circle_vias))
+                    via_pos_2 = connection_point_2.closest(line2.intersect(circle_vias))
+                    corner1 = connection_point_1.closest(line1.intersect(circle_trace))
+                    corner2 = connection_point_2.closest(line2.intersect(circle_trace))
+                    fillet_radius = via_pos_1.distance(corner1) / 2.0
+                    base_path_outer = Path(via_pos_1)
+                    base_path_outer.append_segment(corner1)
+                    base_path_outer.append_arc(corner2, trace_center_radius, anticlockwise=False, fillet_radius=fillet_radius)
+                    base_path_outer.append_segment(via_pos_2, fillet_radius=fillet_radius)
+
+                # Create the links on different layers by rotating the base path accordingly for each phase
+                for slot_pair in range(config.n_slots_per_phase - 1):
+                    for phase in range(config.n_phases):
+                        angle = ((slot_pair * config.n_phases) + phase) * config.coil_angle
+                        if slot_pair % 2 == 0:
+                            path = base_path_inner.rotated(board_center, angle)
+                            link = Link(path, config.series_link_inner_trace_width, config.layers[phase])
+                            links.append(link)
+                        else:
+                            path = base_path_outer.rotated(board_center, angle)
+                            link = Link(path, config.series_link_outer_trace_width, config.layers[phase])
+                            links.append(link)
+                            link_vias.append(Via(via_pos_1, config.via_diameter, config.via_hole_diameter).rotated(board_center, angle))
+                            link_vias.append(Via(via_pos_2, config.via_diameter, config.via_hole_diameter).rotated(board_center, angle))
             else:
-                circle = Circle(board_center, trace_center_radius)
-                line1 = Line.from_two_points(board_center, connection_via_1)
-                line2 = Line.from_two_points(board_center, connection_via_2)
-                corner1 = connection_via_1.closest(line1.intersect(circle))
-                corner2 = connection_via_2.closest(line2.intersect(circle))
-                fillet_radius = connection_via_1.distance(corner1) / 2.0
-                path.append_segment(corner1)
-                path.append_arc(corner2, trace_center_radius, anticlockwise=False, fillet_radius=fillet_radius)
-                path.append_segment(connection_via_2, fillet_radius=fillet_radius)
-            link_A = Link(path.rotated(board_center, -config.coil_angle), config.series_link_trace_width, 'top')
-            link_B = Link(path, config.series_link_trace_width, 'in1')
-            link_C = Link(path.rotated(board_center, config.coil_angle), config.series_link_trace_width, 'in2')
-            links.extend([link_A, link_B, link_C])
+                print("Warning : unable to link the coils, not enough layers")
+        vias.extend(link_vias)
 
-        # Link the common point in a wye (star) configuration
+        # Connect the common point in a wye (star) configuration, on the top layer
+        link_com_connection_point = None
         if config.link_com:
-            # TODO : adapt for different number of coils
-            terminal_B_prime = terminal.mirrored_x().center
-            terminal_A_prime = terminal_B_prime.rotated(board_center, -config.coil_angle)
-            terminal_C_prime = terminal_B_prime.rotated(board_center, config.coil_angle)
-            trace_center_radius = board_center.distance(terminal_B_prime) + config.com_link_offset
-            path = Path(terminal_A_prime)
-            if math.isclose(config.com_link_offset, 0.0, abs_tol=1e-9):
-                path.append_arc(terminal_B_prime, trace_center_radius, anticlockwise=False)
+            layer_id = config.layers[0]
+            connection_point_1 = layers[layer_id][0].path.start_point
+            connection_point_2 = connection_point_1.rotated(board_center, -config.coil_angle)
+            terminal_circle_radius = board_center.distance(terminal.center) if terminal is not None else 0
+            intermediate_circle_radius = config.board_radius - config.board_outer_margin + max(config.com_link_trace_width / 2.0 + config.trace_spacing, coil_outside_connection_length)
+            outer_vias_radius = config.board_radius - config.board_outer_margin + config.outer_vias_offset + config.trace_spacing + config.com_link_trace_width / 2.0
+            if config.terminal_type == TerminalType.CASTELLATED:
+                trace_center_radius = max(intermediate_circle_radius, outer_vias_radius) + config.com_link_offset
             else:
-                circle = Circle(board_center, trace_center_radius)
-                line1 = Line.from_two_points(board_center, terminal_A_prime)
-                line2 = Line.from_two_points(board_center, terminal_B_prime)
-                corner1 = terminal_A_prime.closest(line1.intersect(circle))
-                corner2 = terminal_B_prime.closest(line2.intersect(circle))
-                fillet_radius = terminal_A_prime.distance(corner1) / 2.0
-                path.append_segment(corner1)
-                path.append_arc(corner2, trace_center_radius, anticlockwise=False, fillet_radius=fillet_radius)
-                path.append_segment(terminal_B_prime, fillet_radius=fillet_radius)
-            link_A_prime_B_prime = Link(path, config.com_link_trace_width, 'top')
-            link_B_prime_C_prime = Link(path.rotated(board_center, config.coil_angle), config.com_link_trace_width, 'top')
-            links.extend([link_A_prime_B_prime, link_B_prime_C_prime])
+                trace_center_radius = max(terminal_circle_radius, intermediate_circle_radius, outer_vias_radius) + config.com_link_offset
+            circle_intermediate = Circle(board_center, intermediate_circle_radius)
+            circle_trace = Circle(board_center, trace_center_radius)
+            line1 = Line.from_two_points(board_center, connection_point_1)
+            line2 = Line.from_two_points(board_center, connection_point_2)
+            intermediate_point_1 = connection_point_1.closest(line1.intersect(circle_intermediate))
+            intermediate_point_2 = connection_point_2.closest(line2.intersect(circle_intermediate))
+            corner1 = connection_point_1.closest(line1.intersect(circle_trace))
+            corner2 = connection_point_2.closest(line2.intersect(circle_trace))
+            fillet_radius = intermediate_point_1.distance(corner1) / 2.0
+            base_path_com = Path(intermediate_point_1)
+            if math.isclose(trace_center_radius, intermediate_circle_radius):
+                base_path_com.append_arc(corner2, trace_center_radius, anticlockwise=True)
+            else:
+                base_path_com.append_segment(corner1)
+                base_path_com.append_arc(corner2, trace_center_radius, anticlockwise=True, fillet_radius=fillet_radius)
+                base_path_com.append_segment(intermediate_point_2, fillet_radius=fillet_radius)
+            for i in range(config.n_phases - 1):
+                path = base_path_com.rotated(board_center, -(i + 1) * config.coil_angle)
+                link = Link(path, config.com_link_trace_width, layer_id)
+                links.append(link)
+            link_com_connection_point = intermediate_point_1
+
+        # Connect the terminals and linking vias on the first layer
+        layer_id = config.layers[0]
+        if config.draw_only_layers is None or layer_id in config.draw_only_layers:
+            for i in range(config.n_coils):
+                if terminal and (i < config.n_phases or (not config.link_com and i >= config.n_coils - config.n_phases) or (i == config.n_coils - 1) or not config.link_series_coils):
+                    layers[layer_id][i].path.prepend_segment(terminal.rotated(board_center, 360.0 * i / config.n_coils).center)
+                elif config.link_series_coils and link_vias and config.n_slots_per_phase >= 4 and i >= config.n_phases and i < (config.n_slots_per_phase - 1) * config.n_phases:
+                    radius = board_center.distance(link_vias[0].center)
+                    layers[layer_id][i].path.prepend_segment(Point.polar(0, radius).rotated(board_center, 360.0 * i / config.n_coils))
+                elif link_com_connection_point and config.link_com and i >= config.n_coils - config.n_phases:
+                    layers[layer_id][i].path.prepend_segment(link_com_connection_point.rotated(board_center, 360.0 * i / config.n_coils))
 
         # Add the other layers
         layers['outline'] = outline
@@ -882,7 +984,7 @@ class PCB:
         # Draw the vias
         if self.config.draw_vias:
             for via in self.vias:
-                via.draw_svg(drawing, self.config.via_color, self.config.via_hole_color)
+                via.draw_svg(drawing, self.config.via_color, self.config.via_hole_color, self.config.via_opacity)
 
         # Draw the terminals
         # Castellated-hole terminals are clipped for better rendering (only when exporting with the
@@ -894,7 +996,7 @@ class PCB:
             clip_path.add(drawing.circle(self.board_center.to_viewport().as_tuple(), self.config.board_radius))
         if self.config.draw_terminals:
             for terminal in self.terminals:
-                terminal.draw_svg(drawing, self.config.terminal_color, self.config.terminal_hole_color, clip_path_id)
+                terminal.draw_svg(drawing, self.config.terminal_color, self.config.terminal_hole_color, self.config.terminal_opacity, clip_path_id)
 
         # Draw the construction geometry
         if self.config.draw_construction_geometry:
