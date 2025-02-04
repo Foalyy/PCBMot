@@ -40,6 +40,8 @@ class CoilConnection(Enum):
             connection == CoilConnection.INSIDE_RIGHT_VIA and side == CoilSide.RIGHT
     
     def mirrored_y(connection: Self) -> Self:
+        if connection == CoilConnection.TERMINAL:
+            return CoilConnection.TERMINAL
         if connection == CoilConnection.OUTSIDE_OUTER_LEFT_VIA:
             return CoilConnection.OUTSIDE_OUTER_RIGHT_VIA
         elif connection == CoilConnection.OUTSIDE_OUTER_RIGHT_VIA:
@@ -56,6 +58,12 @@ class CoilConnection(Enum):
             return CoilConnection.INSIDE_RIGHT_VIA
         elif connection == CoilConnection.INSIDE_RIGHT_VIA:
             return CoilConnection.INSIDE_LEFT_VIA
+    
+    def is_outer(connection: Self) -> bool:
+        return connection in [CoilConnection.OUTSIDE_OUTER_LEFT_VIA, CoilConnection.OUTSIDE_OUTER_RIGHT_VIA]
+    
+    def is_inner(connection: Self) -> bool:
+        return connection in [CoilConnection.OUTSIDE_INNER_LEFT_VIA, CoilConnection.OUTSIDE_INNER_RIGHT_VIA]
 
 class Via:
     """A via allowing connections between layers on the board"""
@@ -234,9 +242,25 @@ class Coil:
             outside_connection: CoilConnection,
             inside_connection: CoilConnection,
             max_outside_connection_length: float,
+            mirror_outside_outer_via: bool,
+            mirror_outside_inner_via: bool,
             construction_geometry: list,
         ) -> Self:
         """Generate a coil centered around the vertical axis based on the given parameters"""
+        
+        # If anticlockwise is set, the coil will be mirrored at the end, which means we need to connect it at
+        # first to the opposite via relative to the Y axis so it will end up in the right place at the end.
+        # If the mirror_outside_outer_via flags is set and the outside_connection of the coil is connected to
+        # one of the outer vias, it should be connected to the opposite one instead, and similarly for the
+        # inner connection.
+        mirror_outside_via = \
+            mirror_outside_outer_via and CoilConnection.is_outer(outside_connection) \
+            or mirror_outside_inner_via and CoilConnection.is_inner(outside_connection)
+        if (anticlockwise and not mirror_outside_via) or (not anticlockwise and mirror_outside_via):
+            # Do not mirror if both flags are set as the two mirror operations cancel each other
+            target_outside_connection = CoilConnection.mirrored_y(outside_connection)
+        else:
+            target_outside_connection = outside_connection
 
         # Distance between the centerline of each adjacent coil turn
         loop_offset = config.trace_spacing + config.trace_width
@@ -244,7 +268,7 @@ class Coil:
         # If the outer vias are used, calculate the best outer fillet radius of the outermost coil turn to fit the via
         # Twice the trace width is a sane value to start for any track width
         outer_fillet_radius = config.trace_width * 2
-        if config.n_layers >= 6:
+        if CoilConnection.OUTSIDE_OUTER_RIGHT_VIA in outside_vias or CoilConnection.OUTSIDE_OUTER_LEFT_VIA in outside_vias:
             outer_fillet_radius, success = Coil._compute_fillet(
                 arc_radius = outer_radius,
                 opposite_radius = inner_radius,
@@ -338,18 +362,18 @@ class Coil:
                 break
 
             # Reduce the fillet radius for the next loop
+            min_radius = config.trace_width * 2
             outer_fillet_radius -= loop_offset
-            if outer_fillet_radius < config.trace_width:
-                outer_fillet_radius = config.trace_width
+            if outer_fillet_radius < min_radius:
+                outer_fillet_radius = min_radius
             inner_fillet_radius -= loop_offset
-            if inner_fillet_radius < config.trace_width:
-                inner_fillet_radius = config.trace_width
+            if inner_fillet_radius < min_radius:
+                inner_fillet_radius = min_radius
             
             # Count the number of turns in the coil
             n_turns += 1
 
         # Connect the start of the coil to the requested via or terminal
-        target_outside_connection = CoilConnection.mirrored_y(outside_connection) if anticlockwise else outside_connection
         while not CoilConnection.match_side(target_outside_connection, path.first().tag):
             # Pop the first elements from the path until we find the one that should be connected to the target via or terminal
             path.pop_first()
@@ -373,7 +397,7 @@ class Coil:
             replaced_element = path.pop_first()
             fillet_radius = config.trace_width * 2
             if path.start_point.x < fillet_radius:
-                fillet_radius = None # There is no room for the fillet
+                fillet_radius = None # There isn't enough room for the fillet
             match replaced_element:
                 case PathSegment():
                     path.prepend_segment(corner)
@@ -387,10 +411,11 @@ class Coil:
             # Via to connect to
             try:
                 target_via = outside_vias[outside_connection]
-                if anticlockwise:
+                if (anticlockwise and not mirror_outside_via) or (not anticlockwise and mirror_outside_via):
+                    # Do not mirror if both flags are set as the two mirror operations cancel each other
                     target_via = target_via.mirrored_y()
             except KeyError:
-                raise ValueError("Invalid outside_connection")
+                raise ValueError(f"Invalid outside_connection : {outside_connection}")
             
             # Connect the outside of the coil to the target via
             if target_outside_connection in [CoilConnection.OUTSIDE_OUTER_RIGHT_VIA, CoilConnection.OUTSIDE_INNER_LEFT_VIA]:
@@ -414,8 +439,11 @@ class Coil:
             # Via to connect to
             try:
                 target_via = inside_vias[inside_connection]
+                if (anticlockwise and not mirror_outside_via) or (not anticlockwise and mirror_outside_via):
+                    # Do not mirror if both flags are set as the two mirror operations cancel each other
+                    target_via = target_via.mirrored_y()
             except KeyError:
-                raise ValueError("Invalid inside_connection")
+                raise ValueError(f"Invalid inside_connection : {inside_connection}")
 
             # Pop the last elements from the path until we find the one that should be connected to the target via
             while not inside_connection.match_side(path.last().tag):
@@ -636,16 +664,37 @@ class PCB:
                 inside_connections = [
                     CoilConnection.INSIDE_OUTER_VIA,
                 ]
+                optimise_outer_vias = False
+                optimise_inner_vias = True
             case 4:
-                outside_connections = [
-                    CoilConnection.TERMINAL if config.terminal_type != TerminalType.NONE else None,
-                    CoilConnection.OUTSIDE_INNER_LEFT_VIA,
-                    CoilConnection.OUTSIDE_INNER_RIGHT_VIA,
-                ]
-                inside_connections = [
-                    CoilConnection.INSIDE_OUTER_VIA,
-                    CoilConnection.INSIDE_INNER_VIA,
-                ]
+                # For 4-layer boards, there is two possibilities : other place the two inner vias to have
+                # only traces on the outer side of the coils and maximize useful traces there, or place
+                # the vias along the middle line (using the "optimise" flags) to minimize the place taken
+                # by the vias. This choice is left to the user in the config.
+                if config.four_layers_inside_vias:
+                    outside_connections = [
+                        CoilConnection.TERMINAL if config.terminal_type != TerminalType.NONE else None,
+                        CoilConnection.OUTSIDE_INNER_LEFT_VIA,
+                        CoilConnection.OUTSIDE_INNER_RIGHT_VIA,
+                    ]
+                    inside_connections = [
+                        CoilConnection.INSIDE_OUTER_VIA,
+                        CoilConnection.INSIDE_INNER_VIA,
+                    ]
+                    optimise_outer_vias = False
+                    optimise_inner_vias = False
+                else:
+                    outside_connections = [
+                        CoilConnection.TERMINAL if config.terminal_type != TerminalType.NONE else None,
+                        CoilConnection.OUTSIDE_OUTER_RIGHT_VIA,
+                        CoilConnection.OUTSIDE_INNER_RIGHT_VIA,
+                    ]
+                    inside_connections = [
+                        CoilConnection.INSIDE_OUTER_VIA,
+                        CoilConnection.INSIDE_INNER_VIA,
+                    ]
+                    optimise_outer_vias = True
+                    optimise_inner_vias = True
             case 6:
                 outside_connections = [
                     CoilConnection.TERMINAL if config.terminal_type != TerminalType.NONE else None,
@@ -658,6 +707,8 @@ class PCB:
                     CoilConnection.INSIDE_RIGHT_VIA,
                     CoilConnection.INSIDE_INNER_VIA,
                 ]
+                optimise_outer_vias = True
+                optimise_inner_vias = False
             case 8:
                 outside_connections = [
                     CoilConnection.TERMINAL if config.terminal_type != TerminalType.NONE else None,
@@ -672,6 +723,8 @@ class PCB:
                     CoilConnection.INSIDE_INNER_VIA,
                     CoilConnection.INSIDE_RIGHT_VIA,
                 ]
+                optimise_outer_vias = False
+                optimise_inner_vias = False
         for i, layer_id in enumerate(config.layers):
             layers_specs[layer_id] = {
                 'anticlockwise': i % 2 == 1,
@@ -770,11 +823,13 @@ class PCB:
         left_line = Line.from_two_points(
             board_center,
             Point.polar(-config.coil_angle/2.0, config.board_radius)
-        ).offset(config.via_diameter_w_spacing / 2.0)
+        )
+        left_line_offset = left_line.offset(config.via_diameter_w_spacing / 2.0)
         right_line = Line.from_two_points(
             board_center,
             Point.polar(config.coil_angle/2.0, config.board_radius)
-        ).offset(-config.via_diameter_w_spacing / 2.0)
+        )
+        right_line_offset = right_line.offset(-config.via_diameter_w_spacing / 2.0)
         outer_arc = Arc(
             Point.polar(-config.coil_angle/2.0, config.board_radius - config.board_outer_margin),
             Point.polar(config.coil_angle/2.0, config.board_radius - config.board_outer_margin),
@@ -785,12 +840,33 @@ class PCB:
             Point.polar(config.coil_angle/2.0, config.hole_radius + config.board_inner_margin),
             config.hole_radius + config.board_inner_margin
         ).offset(config.via_diameter / 2.0 - config.inner_vias_offset)
-        points = [
-            (left_line.intersect(outer_arc), CoilConnection.OUTSIDE_OUTER_LEFT_VIA),
-            (right_line.intersect(outer_arc), CoilConnection.OUTSIDE_OUTER_RIGHT_VIA),
-            (left_line.intersect(inner_arc), CoilConnection.OUTSIDE_INNER_LEFT_VIA),
-            (right_line.intersect(inner_arc), CoilConnection.OUTSIDE_INNER_RIGHT_VIA),
-        ]
+        if optimise_outer_vias:
+            # If this flag is set, there is only one outer via used, so place it exactly
+            # on the line between two coils to optimize space
+            points_outer = [
+                (left_line.intersect(outer_arc), CoilConnection.OUTSIDE_OUTER_LEFT_VIA),
+                (right_line.intersect(outer_arc), CoilConnection.OUTSIDE_OUTER_RIGHT_VIA),
+            ]
+        else:
+            # Offset the point to fit vias on both sides of the line
+            points_outer = [
+                (left_line_offset.intersect(outer_arc), CoilConnection.OUTSIDE_OUTER_LEFT_VIA),
+                (right_line_offset.intersect(outer_arc), CoilConnection.OUTSIDE_OUTER_RIGHT_VIA),
+            ]
+        if optimise_inner_vias:
+            # If this flag is set, there is only one inner via used, so place it exactly
+            # on the line between two coils to optimize space
+            points_inner = [
+                (left_line.intersect(inner_arc), CoilConnection.OUTSIDE_INNER_LEFT_VIA),
+                (right_line.intersect(inner_arc), CoilConnection.OUTSIDE_INNER_RIGHT_VIA),
+            ]
+        else:
+            # Offset the point to fit vias on both sides of the line
+            points_inner = [
+                (left_line_offset.intersect(inner_arc), CoilConnection.OUTSIDE_INNER_LEFT_VIA),
+                (right_line_offset.intersect(inner_arc), CoilConnection.OUTSIDE_INNER_RIGHT_VIA),
+            ]
+        points = points_outer + points_inner
         for point, connection in points:
             if connection in outside_connections:
                 outside_vias[connection] = Via(point, config.via_diameter, config.via_hole_diameter, tag=connection)
@@ -805,8 +881,12 @@ class PCB:
                     if slot % 2 == 1:
                         via = via.mirrored_y()
                     vias.append(via.rotated(board_center, 360.0 * (slot * config.n_phases + phase) / config.n_coils))
-                for via in outside_vias.values():
-                    if slot % 2 == 1:
+                for connection, via in outside_vias.items():
+                    # If the optimise flag is set for this via, it should be mirrored twice, so don't mirror it
+                    # at all as both operations would cancel each other
+                    if slot % 2 == 1 \
+                            and not (optimise_outer_vias and slot % 2 == 1 and CoilConnection.is_outer(connection)) \
+                            and not (optimise_inner_vias and slot % 2 == 1 and CoilConnection.is_inner(connection)):
                         via = via.mirrored_y()
                     vias.append(via.rotated(board_center, 360.0 * (slot * config.n_phases + phase) / config.n_coils))
         
@@ -844,7 +924,7 @@ class PCB:
             specs = layers_specs[layer_id]
 
             # Generate the base Coil for this layer
-            coil_base = Coil.generate(
+            coil_even = Coil.generate(
                 config = config,
                 board_center = board_center,
                 angle = config.coil_angle,
@@ -857,19 +937,47 @@ class PCB:
                 outside_connection = specs['outside_connection'],
                 inside_connection = specs['inside_connection'],
                 max_outside_connection_length = coil_outside_connection_length,
+                mirror_outside_outer_via = False,
+                mirror_outside_inner_via = False,
                 construction_geometry = construction_geometry,
             )
-            coil_base_mirrored = coil_base.mirrored_y()
+            if optimise_outer_vias or optimise_inner_vias:
+                # If one of these flags is set, the odd coils are not exactly the same as the even coils mirrored
+                # around the Y axis because of the position of the outside via, so we need to generate a new coil
+                # with the `mirror_outside_outer_via` and `mirror_outside_inner_via` parameters set accordingly
+                # before mirroring the coil.
+                coil_odd = Coil.generate(
+                    config = config,
+                    board_center = board_center,
+                    angle = config.coil_angle,
+                    outer_radius = config.board_radius - config.board_outer_margin - config.trace_width / 2.0,
+                    inner_radius = config.hole_radius + config.board_inner_margin + config.trace_width / 2.0,
+                    anticlockwise = specs['anticlockwise'],
+                    outside_vias = outside_vias,
+                    inside_vias = inside_vias,
+                    terminal = terminal,
+                    outside_connection = specs['outside_connection'],
+                    inside_connection = specs['inside_connection'],
+                    max_outside_connection_length = coil_outside_connection_length,
+                    mirror_outside_outer_via = optimise_outer_vias,
+                    mirror_outside_inner_via = optimise_inner_vias,
+                    construction_geometry = construction_geometry,
+                ).mirrored_y()
+            else:
+                # In other cases, the odd coils are simply the mirror of the even coils, there is no need
+                # to generate a full new path as this is a relatively expensive operation.
+                coil_odd = coil_even.mirrored_y()
 
-            # Generate the other coils by rotating and mirroring the base coil
+            # Generate the other coils by rotating the base coils
             coils = []
             for slot in range(config.n_slots_per_phase):
                 for phase in range(config.n_phases):
                     coil_index = slot * config.n_phases + phase
                     angle = 360.0 * coil_index / config.n_coils
-                    coil = coil_base
-                    if slot % 2 == 1:
-                        coil = coil.mirrored_y()
+                    if slot % 2 == 0:
+                        coil = coil_even
+                    else:
+                        coil = coil_odd
                     coil = coil.rotated(board_center, angle)
                     coils.append(coil)
 
@@ -883,7 +991,10 @@ class PCB:
                 # Base path for inner connections (even coils)
                 # Draw a path offset toward the inner side of the board that connects these two points for the first coil
                 connection_point_1 = layers[config.layers[-1]][0].path.start_point
-                connection_point_2 = connection_point_1.mirrored_y().rotated(board_center, config.coil_angle * config.n_phases)
+                connection_point_2 = connection_point_1
+                if not optimise_inner_vias:
+                    connection_point_2 = connection_point_2.mirrored_y()
+                connection_point_2 = connection_point_2.rotated(board_center, config.coil_angle * config.n_phases)
                 vias_circle_radius = board_center.distance(connection_point_1)
                 trace_center_radius = vias_circle_radius - config.via_diameter / 2.0 - config.trace_spacing - config.series_link_inner_trace_width / 2.0 - config.series_link_inner_offset
                 base_path_inner = Path(connection_point_1)

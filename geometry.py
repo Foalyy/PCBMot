@@ -704,7 +704,7 @@ class Circle(DrawableObject):
 class Arc(DrawableObject):
     """A 2D Arc represented by its two endpoints and its radius
 
-    The arc always go clockwise from p1 to p2.
+    The arc always goes clockwise from p1 to p2.
     """
 
     def __init__(self, p1: Point, p2: Point, radius: float, reverse: bool = False):

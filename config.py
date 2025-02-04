@@ -15,6 +15,7 @@ class Config:
         board_outer_margin: float,
         board_inner_margin: float,
         n_phases: int,
+        four_layers_inside_vias: bool,
         n_slots_per_phase: int,
         coil_angle: float,
         n_layers: int,
@@ -66,6 +67,7 @@ class Config:
         self.n_slots_per_phase: int = n_slots_per_phase
         self.coil_angle: float = coil_angle
         self.n_layers: int = n_layers
+        self.four_layers_inside_vias: bool = four_layers_inside_vias
         self.max_turns_per_layer: int = max_turns_per_layer
         self.trace_width: float = trace_width
         self.trace_spacing: float = trace_spacing
