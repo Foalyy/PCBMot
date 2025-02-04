@@ -39,6 +39,8 @@ class Config:
         link_com: bool,
         com_link_trace_width: float,
         com_link_offset: float,
+        coil_names_font_size: float,
+        coil_names_offset: float,
         magnets_diameter: float,
         magnets_position_radius: float,
         draw_vias: bool,
@@ -47,6 +49,7 @@ class Config:
         draw_construction_geometry: bool,
         draw_only_layers: list[str],
         draw_magnets: bool,
+        draw_coil_names: bool,
         svg_profile: str,
     ):
         # Check parameters
@@ -92,6 +95,8 @@ class Config:
         self.link_com: bool = link_com
         self.com_link_trace_width: float = com_link_trace_width
         self.com_link_offset: float = com_link_offset
+        self.coil_names_font_size: float = coil_names_font_size
+        self.coil_names_offset: float = coil_names_offset
         self.magnets_diameter: float = magnets_diameter
         self.magnets_position_radius: float = magnets_position_radius
         self.draw_vias: bool = draw_vias
@@ -100,6 +105,7 @@ class Config:
         self.draw_construction_geometry: bool = draw_construction_geometry
         self.draw_only_layers: list[str] = draw_only_layers
         self.draw_magnets: bool = draw_magnets
+        self.draw_coil_names: bool = draw_coil_names
         self.svg_profile = svg_profile
 
         # Computed parameters
@@ -124,6 +130,14 @@ class Config:
                 self.layers = ['top', 'in1', 'in2', 'in3', 'in4', 'in5', 'in6', 'bottom']
             case _:
                 raise ValueError("The number of layers must be 2, 4, 6 or 8")
+        coil_names_position_radius = ((self.board_radius - self.board_outer_margin) + (self.hole_radius + self.board_inner_margin)) / 2.0
+        if coil_names_font_size is None:
+            suggested_size_by_width = (2 * math.pi * coil_names_position_radius / self.n_coils) / 2.0
+            suggested_size_by_height = ((self.board_radius - self.board_outer_margin) - (self.hole_radius + self.board_inner_margin)) / 5.0
+            self.coil_names_font_size = round(min(suggested_size_by_width, suggested_size_by_height), 1)
+        if coil_names_offset is None:
+            self.coil_names_offset = self.via_diameter * 4
+        self.coil_names_position_radius = coil_names_position_radius + self.coil_names_offset
         if self.magnets_position_radius is None:
             self.magnets_position_radius = ((self.board_radius - self.board_outer_margin) + (self.hole_radius + self.board_inner_margin)) / 2.0
         self.n_magnets = 2 * self.n_slots_per_phase
@@ -152,13 +166,16 @@ class Config:
             'in5': "#A7A5C6",
             'in6': "#28CCD9",
         }
+        self.top_silk_color = "#EEEFA4"
+        self.bottom_silk_color = "#E6B2A4"
+        self.coil_names_font_family = "Arial, sans-serif"
         self.via_color = "#ECECEC"
         self.via_hole_color = "#E3B72E"
         self.via_opacity = 1.0
         self.terminal_color = "#E6B631"
         self.terminal_hole_color = self.background_color
         self.terminal_opacity = 1.0
-        self.magnets_color = "#9AEDFF"
+        self.magnets_color = "#F0F0F0"
         self.magnets_thickness = 0.1
         self.magnets_opacity = 1.0
         self.magnets_dashes = "none"

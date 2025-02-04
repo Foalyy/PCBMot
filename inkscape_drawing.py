@@ -19,6 +19,7 @@ class InkscapeDrawing(svg.Drawing):
         'rect': svg.shapes.Rect,
         'circle': svg.shapes.Circle,
         'path': svg.path.Path,
+        'text': svg.text.Text,
     }
 
     def __init__(self, *args, **extra):
@@ -133,4 +134,4 @@ class InkscapeDrawing(svg.Drawing):
         if name in self.object_types:
             return self.ObjectBuilder(self.object_types[name], self)
         else:
-            raise AttributeError("'%s' has no attribute '%s'" % (self.__class__.__name__, name))
+            raise AttributeError(f"'%s' has no attribute '%s'" % (self.__class__.__name__, name))

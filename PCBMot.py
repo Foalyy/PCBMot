@@ -35,6 +35,8 @@ config = Config(
     link_com = True,
     com_link_trace_width = 0.6, # mm
     com_link_offset = 0.0, # mm
+    coil_names_font_size = None,
+    coil_names_offset = None,
     magnets_diameter = None,
     magnets_position_radius = None,
     draw_vias = True,
@@ -43,6 +45,7 @@ config = Config(
     draw_construction_geometry = True,
     draw_only_layers = None,
     draw_magnets = True,
+    draw_coil_names = True,
     svg_profile = 'tiny'
 )
 

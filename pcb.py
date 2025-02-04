@@ -89,7 +89,7 @@ class CoilConnection(Enum):
 class Via:
     """A via allowing connections between layers on the board"""
 
-    def __init__(self, center: Point, diameter: float, hole_diameter: float, tag=None, label: str = None):
+    def __init__(self, center: Point, diameter: float, hole_diameter: float, tag = None, label: str = None):
         self.center: Point = center
         self.diameter: float = diameter
         self.hole_diameter: float = hole_diameter
@@ -139,7 +139,14 @@ class Via:
             label = self.label,
         )
     
-    def draw_svg(self, drawing: svg.Drawing, parent: svg.base.BaseElement, via_color: str, hole_color: str, opacity: float = 1.0):
+    def draw_svg(
+            self,
+            drawing: svg.Drawing,
+            parent: svg.base.BaseElement,
+            via_color: str,
+            hole_color: str,
+            opacity: float = None,
+        ):
         """Draw this Via on the given SVG drawing
         
         This method returns self and can therefore be chained."""
@@ -242,7 +249,15 @@ class Terminal:
             label = self.label,
         )
     
-    def draw_svg(self, drawing: svg.Drawing, parent: svg.base.BaseElement, pad_color: str, hole_color: str, opacity: float = 1.0, clip_path_id = None):
+    def draw_svg(
+            self,
+            drawing: svg.Drawing,
+            parent: svg.base.BaseElement,
+            pad_color: str,
+            hole_color: str,
+            opacity: float = None,
+            clip_path_id = None
+        ):
         """Draw this Terminal on the given SVG drawing
         
         This method returns self and can therefore be chained."""
@@ -585,7 +600,15 @@ class Coil:
             label = self.label,
         )
     
-    def draw_svg(self, drawing: svg.Drawing, parent: svg.base.BaseElement, color=None, opacity=None, thickness=None, dashes=None):
+    def draw_svg(
+            self,
+            drawing: svg.Drawing,
+            parent: svg.base.BaseElement,
+            color: str = None,
+            opacity: float = None,
+            thickness: float = None,
+            dashes: str = None,
+        ):
         """Draw this Coil on the given SVG drawing
         
         This method returns self and can therefore be chained."""
@@ -688,7 +711,15 @@ class Link:
             label = self.label
         )
     
-    def draw_svg(self, drawing: svg.Drawing, parent: svg.base.BaseElement, color=None, opacity=None, thickness=None, dashes=None):
+    def draw_svg(
+            self,
+            drawing: svg.Drawing,
+            parent: svg.base.BaseElement,
+            color: str = None,
+            opacity: float = None,
+            thickness: float = None,
+            dashes: str = None,
+        ):
         """Draw this Link on the given SVG drawing
         
         This method returns self and can therefore be chained."""
@@ -702,6 +733,41 @@ class Link:
             dashes = dashes,
             label = self.label,
         )
+        return self
+
+class SilkscreenText:
+    """A text printed on the silkscreen layer"""
+
+    def __init__(self, text: str, position: Point, size: float, rotation: float, font_family: str = None, label: str = None):
+        self.text: str = text
+        self.position: Point = position
+        self.size: float = size
+        self.rotation: float = rotation
+        self.font_family: float = font_family
+        self.label: float = label
+    
+    def draw_svg(
+        self,
+        drawing: svg.Drawing,
+        parent: svg.base.BaseElement,
+        color : str = None,
+    ):
+        """Draw this text on the given SVG drawing
+        
+        This method returns self and can therefore be chained."""
+
+        parent.add(drawing.text(
+            text = self.text,
+            insert = self.position.to_viewport().as_tuple(),
+            stroke = "none",
+            fill = color,
+            text_anchor = "middle",
+            font_size = self.size,
+            font_family = self.font_family,
+            font_weight = "bolder",
+            transform = f"rotate({self.rotation}, {self.position.to_svg()})",
+            label = self.label,
+        ))
         return self
 
 class Outline:
@@ -748,6 +814,8 @@ class PCB:
         vias: list[Via],
         terminals: list[Terminal],
         links: list[Link],
+        top_silk: list[SilkscreenText],
+        bottom_silk: list[SilkscreenText],
         construction_geometry: list
     ):
         self.config = config
@@ -757,6 +825,8 @@ class PCB:
         self.vias = vias
         self.terminals = terminals
         self.links = links
+        self.top_silk = top_silk
+        self.bottom_silk = bottom_silk
         self.construction_geometry = construction_geometry
     
     def generate(config: Config):
@@ -766,6 +836,8 @@ class PCB:
         vias = []
         terminals = []
         links = []
+        top_silk = []
+        bottom_silk = []
         construction_geometry = []
 
         # Names of the coils : A1, A2, A3, B1, ...
@@ -1279,6 +1351,19 @@ class PCB:
                 elif link_com_connection_point and config.link_com and i >= config.n_coils - config.n_phases:
                     coils[layer_id][i].path.prepend_segment(link_com_connection_point.rotated(board_center, 360.0 * i / config.n_coils))
 
+        # Print the names of the coils on the top silkscreen
+        if config.draw_coil_names:
+            for i in range(config.n_coils):
+                angle = 360. * i / config.n_coils
+                top_silk.append(SilkscreenText(
+                    text = coil_names[i],
+                    position = Point.polar(angle, config.coil_names_position_radius),
+                    size = config.coil_names_font_size,
+                    rotation = angle,
+                    font_family = config.coil_names_font_family,
+                    label = f"Coil_name_{coil_names[i]}",
+                ))
+
         # Create the PCB
         return PCB(
             config = config,
@@ -1288,6 +1373,8 @@ class PCB:
             vias = vias,
             terminals = terminals,
             links = links,
+            top_silk = top_silk,
+            bottom_silk = bottom_silk,
             construction_geometry = construction_geometry,
         )
     
@@ -1299,7 +1386,7 @@ class PCB:
         # Create the SVG layers to organize the drawing.
         # Layer groups created later will be displayed on top of the previous ones, so the board layers are reversed
         # to have the top layer on top and bottom layer on the bottom, as expected.
-        svg_layers_ids = list(reversed(self.config.layers)) + ['outline', 'vias', 'terminals', 'magnets', 'construction']
+        svg_layers_ids = ['bottom_silk'] + list(reversed(self.config.layers)) + ['top_silk', 'outline', 'vias', 'terminals', 'magnets', 'construction']
         svg_layers = {}
         for layer_id in svg_layers_ids:
             svg_layers[layer_id] = drawing.layer(label=layer_id.capitalize())
@@ -1356,6 +1443,20 @@ class PCB:
                     opacity = self.config.terminal_opacity,
                     clip_path_id = clip_path_id,
                 )
+        
+        # Draw the top and bottom silkscreens
+        for item in self.top_silk:
+            item.draw_svg(
+                drawing = drawing,
+                parent = svg_layers['top_silk'],
+                color = self.config.top_silk_color,
+            )
+        for item in self.bottom_silk:
+            item.draw_svg(
+                drawing = drawing,
+                parent = svg_layers['bottom_silk'],
+                color = self.config.bottom_silk_color,
+            )
 
         # Draw the outline
         if self.config.draw_outline:
