@@ -1,5 +1,5 @@
 from typing import Self
-import svgwrite as svg
+from inkscape_drawing import InkscapeDrawing
 from config import Config, TerminalType
 from pcb import PCB
 
@@ -7,14 +7,14 @@ from pcb import PCB
 # Config
 SVG_FILENAME = 'example.svg'
 config = Config(
-    board_diameter = 23, # mm
-    hole_diameter = 4, # mm
+    board_diameter = 90, # mm
+    hole_diameter = 55, # mm
     board_outer_margin = 1.8, # mm
     board_inner_margin = 1.0, # mm
     n_phases = 3,
-    n_slots_per_phase = 2,
+    n_slots_per_phase = 10,
     coil_angle = None,
-    n_layers = 4,
+    n_layers = 8,
     four_layers_inside_vias = False,
     max_turns_per_layer = None,
     trace_width = 0.1, # mm
@@ -37,6 +37,7 @@ config = Config(
     com_link_offset = 0.0, # mm
     draw_vias = True,
     draw_terminals = True,
+    draw_outline = True,
     draw_construction_geometry = True,
     draw_only_layers = None,
     svg_profile = 'tiny'
@@ -45,24 +46,14 @@ config = Config(
 # Create the PCB
 pcb = PCB.generate(config)
 
-# Create an SVG drawing
-dwg = svg.Drawing(
+# Create the SVG drawing
+dwg = InkscapeDrawing(
     SVG_FILENAME,
-    size=("1000px", "1000px"),
-    viewBox=f"{-config.viewport_width/2.0} {-config.viewport_height/2.0} {config.viewport_width} {config.viewport_height}",
-    profile=config.svg_profile,
-    fill="none",
-    stroke="#000000",
-    stroke_width=0.5,
-    stroke_linejoin="round",
-    stroke_linecap="round",
+    size = ("1000px", "1000px"),
+    coords = (-config.viewport_width/2.0, -config.viewport_height/2.0, config.viewport_width, config.viewport_height),
+    profile = config.svg_profile,
+    background_color = config.background_color,
 )
-dwg.add(dwg.rect( # Background
-    (-config.viewport_width/2.0, -config.viewport_height/2.0),
-    (config.viewport_width, config.viewport_height),
-    stroke = "none",
-    fill = config.background_color,
-))
 
 # Draw the PCB
 pcb.draw_svg(dwg)

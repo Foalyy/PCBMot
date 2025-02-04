@@ -64,15 +64,37 @@ class CoilConnection(Enum):
     
     def is_inner(connection: Self) -> bool:
         return connection in [CoilConnection.OUTSIDE_INNER_LEFT_VIA, CoilConnection.OUTSIDE_INNER_RIGHT_VIA]
+    
+    def label(connection: Self) -> str:
+        match connection:
+            case CoilConnection.TERMINAL:
+                return "Terminal"
+            case CoilConnection.OUTSIDE_OUTER_LEFT_VIA:
+                return "Outside_outer_left"
+            case CoilConnection.OUTSIDE_OUTER_RIGHT_VIA:
+                return "Outside_outer_right"
+            case CoilConnection.OUTSIDE_INNER_LEFT_VIA:
+                return "Outside_inner_left"
+            case CoilConnection.OUTSIDE_INNER_RIGHT_VIA:
+                return "Outside_inner_right"
+            case CoilConnection.INSIDE_OUTER_VIA:
+                return "Inside_outer"
+            case CoilConnection.INSIDE_INNER_VIA:
+                return "Inside_inner"
+            case CoilConnection.INSIDE_LEFT_VIA:
+                return "Inside_left"
+            case CoilConnection.INSIDE_RIGHT_VIA:
+                return "Inside_right"
 
 class Via:
     """A via allowing connections between layers on the board"""
 
-    def __init__(self, center: Point, diameter: float, hole_diameter: float, tag=None):
+    def __init__(self, center: Point, diameter: float, hole_diameter: float, tag=None, label: str = None):
         self.center: Point = center
         self.diameter: float = diameter
         self.hole_diameter: float = hole_diameter
         self.tag = tag
+        self.label = label
     
     def distance(self, object) -> float:
         """Calculate the distance between this Via and the given object
@@ -89,38 +111,64 @@ class Via:
     
     def rotated(self, rotation_center: Self, angle: float) -> Self:
         """Create a copy of this Via rotated around the given center point by the given angle"""
-        return Via(self.center.rotated(rotation_center, angle), self.diameter, self.hole_diameter)
+        return Via(
+            center = self.center.rotated(rotation_center, angle),
+            diameter = self.diameter,
+            hole_diameter = self.hole_diameter,
+            tag = self.tag,
+            label = self.label,
+        )
     
     def mirrored_x(self) -> Self:
         """Create a copy of this Via mirrored about the X axis"""
-        return Via(self.center.mirrored_x(), self.diameter, self.hole_diameter)
+        return Via(
+            center = self.center.mirrored_x(),
+            diameter = self.diameter,
+            hole_diameter = self.hole_diameter,
+            tag = self.tag,
+            label = self.label,
+        )
     
     def mirrored_y(self) -> Self:
         """Create a copy of this Via mirrored about the Y axis"""
-        return Via(self.center.mirrored_y(), self.diameter, self.hole_diameter)
+        return Via(
+            center = self.center.mirrored_y(),
+            diameter = self.diameter,
+            hole_diameter = self.hole_diameter,
+            tag = self.tag,
+            label = self.label,
+        )
     
-    def draw_svg(self, drawing: svg.Drawing, via_color: str, hole_color: str, opacity: float = 1.0):
+    def draw_svg(self, drawing: svg.Drawing, parent: svg.base.BaseElement, via_color: str, hole_color: str, opacity: float = 1.0):
         """Draw this Via on the given SVG drawing
         
         This method returns self and can therefore be chained."""
 
+        # Group the two circles together
+        group = drawing.g(label = self.label)
+
         # Draw the pad
-        drawing.add(drawing.circle(
+        group.add(drawing.circle(
             self.center.to_viewport().as_tuple(),
             self.diameter / 2.0,
             stroke = "none",
             fill = via_color,
             opacity = opacity,
+            label = f"{self.label}_pad" if self.label is not None else None,
         ))
 
         # Draw the hole
-        drawing.add(drawing.circle(
+        group.add(drawing.circle(
             self.center.to_viewport().as_tuple(),
             self.hole_diameter / 2.0,
             stroke = "none",
             fill = hole_color,
             opacity = opacity,
+            label = f"{self.label}_hole" if self.label is not None else None,
         ))
+
+        # Add the group to the parent
+        parent.add(group)
 
         return self
     
@@ -140,12 +188,13 @@ class Via:
 class Terminal:
     """A terminal for external connection on the board"""
 
-    def __init__(self, center: Point, terminal_type: TerminalType, diameter: float, hole_diameter: float, tag=None):
+    def __init__(self, center: Point, terminal_type: TerminalType, diameter: float, hole_diameter: float, tag=None, label: str = None):
         self.center: Point = center
         self.terminal_type: TerminalType = terminal_type
         self.diameter: float = diameter
         self.hole_diameter: float = hole_diameter
         self.tag = tag
+        self.label = label
     
     def distance(self, object) -> float:
         """Calculate the distance between this Terminal and the given object
@@ -162,17 +211,38 @@ class Terminal:
     
     def rotated(self, rotation_center: Self, angle: float) -> Self:
         """Create a copy of this Terminal rotated around the given center point by the given angle"""
-        return Terminal(self.center.rotated(rotation_center, angle), self.terminal_type, self.diameter, self.hole_diameter)
+        return Terminal(
+            center = self.center.rotated(rotation_center, angle),
+            terminal_type = self.terminal_type,
+            diameter = self.diameter,
+            hole_diameter = self.hole_diameter,
+            tag = self.tag,
+            label = self.label,
+        )
     
     def mirrored_x(self) -> Self:
         """Create a copy of this Terminal mirrored about the X axis"""
-        return Terminal(self.center.mirrored_x(), self.terminal_type, self.diameter, self.hole_diameter)
+        return Terminal(
+            center = self.center.mirrored_x(),
+            terminal_type = self.terminal_type,
+            diameter = self.diameter,
+            hole_diameter = self.hole_diameter,
+            tag = self.tag,
+            label = self.label,
+        )
     
     def mirrored_y(self) -> Self:
         """Create a copy of this Terminal mirrored about the Y axis"""
-        return Terminal(self.center.mirrored_y(), self.terminal_type, self.diameter, self.hole_diameter)
+        return Terminal(
+            center = self.center.mirrored_y(),
+            terminal_type = self.terminal_type,
+            diameter = self.diameter,
+            hole_diameter = self.hole_diameter,
+            tag = self.tag,
+            label = self.label,
+        )
     
-    def draw_svg(self, drawing: svg.Drawing, pad_color: str, hole_color: str, opacity: float = 1.0, clip_path_id = None):
+    def draw_svg(self, drawing: svg.Drawing, parent: svg.base.BaseElement, pad_color: str, hole_color: str, opacity: float = 1.0, clip_path_id = None):
         """Draw this Terminal on the given SVG drawing
         
         This method returns self and can therefore be chained."""
@@ -180,54 +250,65 @@ class Terminal:
         if self.terminal_type == TerminalType.NONE:
             return
 
+        # Group the two circles together
+        group = drawing.g(label = self.label)
+
         # Draw the pad
         if clip_path_id:
-            drawing.add(drawing.circle(
+            group.add(drawing.circle(
                 self.center.to_viewport().as_tuple(),
                 self.diameter / 2.0,
                 stroke = "none",
                 fill = pad_color,
                 opacity = opacity,
                 clip_path = f"url(#{clip_path_id})" if clip_path_id is not None else None,
+                label = f"{self.label}_pad" if self.label is not None else None,
             ))
         else:
-            drawing.add(drawing.circle(
+            group.add(drawing.circle(
                 self.center.to_viewport().as_tuple(),
                 self.diameter / 2.0,
                 stroke = "none",
                 fill = pad_color,
                 opacity = opacity,
+                label = f"{self.label}_pad" if self.label is not None else None,
             ))
 
         # Draw the hole
         if self.terminal_type in [TerminalType.THROUGH_HOLE, TerminalType.CASTELLATED]:
             if clip_path_id:
-                drawing.add(drawing.circle(
+                group.add(drawing.circle(
                     self.center.to_viewport().as_tuple(),
                     self.hole_diameter / 2.0,
                     stroke = "none",
                     fill = hole_color,
                     opacity = opacity,
                     clip_path = f"url(#{clip_path_id})" if clip_path_id is not None else None,
+                    label = f"{self.label}_hole" if self.label is not None else None,
                 ))
             else:
-                drawing.add(drawing.circle(
+                group.add(drawing.circle(
                     self.center.to_viewport().as_tuple(),
                     self.hole_diameter / 2.0,
                     stroke = "none",
                     fill = hole_color,
                     opacity = opacity,
+                    label = f"{self.label}_hole" if self.label is not None else None,
                 ))
+
+        # Add the group to the parent
+        parent.add(group)
 
         return self
 
 class Coil:
     """A single coil on the board"""
 
-    def __init__(self, path: Path, rotation: float, n_turns: int):
+    def __init__(self, path: Path, rotation: float, n_turns: int, label: str = None):
         self.path: Path = path
         self.rotation: float = rotation
         self.n_turns: int = n_turns
+        self.label = label
 
     def generate(
             config: Config,
@@ -477,24 +558,47 @@ class Coil:
     def rotated(self, center: Self, angle: float) -> Self:
         """Create a copy of this Coil rotated around the given center point by the given angle"""
         path = self.path.rotated(center, angle)
-        return Coil(path, self.rotation + angle, self.n_turns)
+        return Coil(
+            path = path,
+            rotation = self.rotation + angle,
+            n_turns = self.n_turns,
+            label = self.label,
+        )
     
     def mirrored_x(self) -> Self:
         """Create a copy of this Coil mirrored about the X axis"""
         path = self.path.mirrored_x()
-        return Coil(path, self.rotation, self.n_turns)
+        return Coil(
+            path = path,
+            rotation = self.rotation,
+            n_turns = self.n_turns,
+            label = self.label,
+        )
     
     def mirrored_y(self) -> Self:
         """Create a copy of this Coil mirrored about the Y axis"""
         path = self.path.mirrored_y()
-        return Coil(path, -self.rotation, self.n_turns)
+        return Coil(
+            path = path,
+            rotation = -self.rotation,
+            n_turns = self.n_turns,
+            label = self.label,
+        )
     
-    def draw_svg(self, drawing: svg.Drawing, color=None, opacity=None, thickness=None, dashes=None):
+    def draw_svg(self, drawing: svg.Drawing, parent: svg.base.BaseElement, color=None, opacity=None, thickness=None, dashes=None):
         """Draw this Coil on the given SVG drawing
         
         This method returns self and can therefore be chained."""
 
-        self.path.draw_svg(drawing, color, opacity, thickness, dashes)
+        self.path.draw_svg(
+            drawing = drawing,
+            parent = parent,
+            color = color,
+            opacity = opacity,
+            thickness = thickness,
+            dashes = dashes,
+            label = self.label,
+        )
         return self
     
     def _compute_fillet(
@@ -548,32 +652,89 @@ class Coil:
 class Link:
     """A trace on the board linking two coils"""
 
-    def __init__(self, path: Path, trace_width: float, layer: str):
+    def __init__(self, path: Path, trace_width: float, layer: str, label: str = None):
         self.path: Path = path
         self.trace_width: float = trace_width
         self.layer: str = layer
+        self.label: str = label
 
     def rotated(self, center: Self, angle: float) -> Self:
         """Create a copy of this Link rotated around the given center point by the given angle"""
         path = self.path.rotated(center, angle)
-        return Link(path, self.trace_width, self.layer)
+        return Link(
+            path = path,
+            trace_width = self.trace_width,
+            layer = self.layer,
+            label = self.label
+        )
     
     def mirrored_x(self) -> Self:
         """Create a copy of this Link mirrored about the X axis"""
         path = self.path.mirrored_x()
-        return Link(path, self.trace_width, self.layer)
+        return Link(
+            path = path,
+            trace_width = self.trace_width,
+            layer = self.layer,
+            label = self.label
+        )
     
     def mirrored_y(self) -> Self:
         """Create a copy of this Link mirrored about the Y axis"""
         path = self.path.mirrored_y()
-        return Link(path, self.trace_width, self.layer)
+        return Link(
+            path = path,
+            trace_width = self.trace_width,
+            layer = self.layer,
+            label = self.label
+        )
     
-    def draw_svg(self, drawing: svg.Drawing, color=None, opacity=None, thickness=None, dashes=None):
+    def draw_svg(self, drawing: svg.Drawing, parent: svg.base.BaseElement, color=None, opacity=None, thickness=None, dashes=None):
         """Draw this Link on the given SVG drawing
         
         This method returns self and can therefore be chained."""
 
-        self.path.draw_svg(drawing, color, opacity, thickness, dashes)
+        self.path.draw_svg(
+            drawing = drawing,
+            parent = parent,
+            color = color,
+            opacity = opacity,
+            thickness = thickness,
+            dashes = dashes,
+            label = self.label,
+        )
+        return self
+
+class Outline:
+    """The shape and dimensions of the board"""
+
+    def __init__(self, board_center: Point, board_diameter: float, hole_diameter: float):
+        self.board_center = board_center
+        self.board_diameter = board_diameter
+        self.hole_diameter = hole_diameter
+    
+    def draw_svg(self, drawing: svg.Drawing, parent: svg.base.BaseElement, color=None, thickness=None, dashes=None):
+        """Draw this Link on the given SVG drawing
+        
+        This method returns self and can therefore be chained."""
+
+        parent.add(drawing.circle(
+            self.board_center.to_viewport().as_tuple(),
+            self.board_diameter / 2.0,
+            stroke = color,
+            stroke_width = thickness,
+            stroke_dasharray = dashes,
+            fill = "none",
+            label = f"Outline_edge",
+        ))
+        parent.add(drawing.circle(
+            self.board_center.to_viewport().as_tuple(),
+            self.hole_diameter / 2.0,
+            stroke = color,
+            stroke_width = thickness,
+            stroke_dasharray = dashes,
+            fill = "none",
+            label = f"Outline_hole",
+        ))
         return self
 
 class PCB:
@@ -582,7 +743,8 @@ class PCB:
     def __init__(self,
         config: Config,
         board_center: Point,
-        layers: dict,
+        outline: list,
+        coils: dict,
         vias: list[Via],
         terminals: list[Terminal],
         links: list[Link],
@@ -590,7 +752,8 @@ class PCB:
     ):
         self.config = config
         self.board_center = board_center
-        self.layers = layers
+        self.outline = outline
+        self.coils = coils
         self.vias = vias
         self.terminals = terminals
         self.links = links
@@ -599,20 +762,23 @@ class PCB:
     def generate(config: Config):
         """Generate a new PCB based on the given config"""
         
-        layers = {}
+        coils = {}
         vias = []
         terminals = []
         links = []
         construction_geometry = []
 
+        # Names of the coils : A1, A2, A3, B1, ...
+        coil_names = []
+        for slot in range(config.n_slots_per_phase):
+            for phase in range(config.n_phases):
+                coil_names.append(f"{chr(ord('A') + phase)}{slot + 1}")
+
         # Center the board on the origin
         board_center = Point.origin()
 
         # Board outline
-        outline = [
-            Circle(board_center, config.board_radius),
-            Circle(board_center, config.hole_radius),
-        ]
+        outline = Outline(board_center, config.board_diameter, config.hole_diameter)
 
         # Construction geometry
         construction_geometry = [
@@ -877,10 +1043,13 @@ class PCB:
         # Copy the vias for all coils
         for slot in range(config.n_slots_per_phase):
             for phase in range(config.n_phases):
-                for via in inside_vias.values():
+                coil_idx = slot * config.n_phases + phase
+                for connection, via in inside_vias.items():
                     if slot % 2 == 1:
                         via = via.mirrored_y()
-                    vias.append(via.rotated(board_center, 360.0 * (slot * config.n_phases + phase) / config.n_coils))
+                    via = via.rotated(board_center, 360.0 * coil_idx / config.n_coils)
+                    via.label = f"Via_{coil_names[coil_idx]}_{CoilConnection.label(connection)}"
+                    vias.append(via)
                 for connection, via in outside_vias.items():
                     # If the optimise flag is set for this via, it should be mirrored twice, so don't mirror it
                     # at all as both operations would cancel each other
@@ -888,35 +1057,41 @@ class PCB:
                             and not (optimise_outer_vias and slot % 2 == 1 and CoilConnection.is_outer(connection)) \
                             and not (optimise_inner_vias and slot % 2 == 1 and CoilConnection.is_inner(connection)):
                         via = via.mirrored_y()
-                    vias.append(via.rotated(board_center, 360.0 * (slot * config.n_phases + phase) / config.n_coils))
+                    via = via.rotated(board_center, 360.0 * coil_idx / config.n_coils)
+                    via.label = f"Via_{coil_names[coil_idx]}_{CoilConnection.label(connection)}"
+                    vias.append(via)
         
         # Terminal
-        terminal = None
+        terminal_base = None
         match config.terminal_type:
             case TerminalType.THROUGH_HOLE | TerminalType.SMD:
                 # Align the terminal outside the coil
                 y = config.board_radius - config.board_outer_margin + config.trace_spacing + config.terminal_offset + config.terminal_diameter / 2.0
-                terminal = Terminal(Point(0.0, y), config.terminal_type, config.terminal_diameter, config.terminal_hole_diameter)
-            
             case TerminalType.CASTELLATED:
                 # Align the terminal on the edge of the board
                 y = config.board_radius
-                terminal = Terminal(Point(0.0, y), config.terminal_type, config.terminal_diameter, config.terminal_hole_diameter)
+        terminal_base = Terminal(Point(0.0, y), config.terminal_type, config.terminal_diameter, config.terminal_hole_diameter)
 
         # Copy the terminals for all phases and the COM point
-        if terminal:
+        if terminal_base:
             if config.link_series_coils:
                 n_terminals = config.n_phases
             else:
                 n_terminals = config.n_coils
             for i in range(n_terminals):
-                terminals.append(terminal.rotated(board_center, 360.0 * i / config.n_coils))
+                terminal = terminal_base.rotated(board_center, 360.0 * i / config.n_coils)
+                terminal.label = f"Terminal_{coil_names[i]}"
+                terminals.append(terminal)
             if config.link_series_coils:
                 if config.link_com:
-                    terminals.append(terminal.rotated(board_center, - 360.0 / config.n_coils))
+                    terminal = terminal_base.rotated(board_center, - 360.0 / config.n_coils)
+                    terminal.label = f"Terminal_COM"
+                    terminals.append(terminal)
                 else:
                     for i in range(config.n_phases):
-                        terminals.append(terminal.rotated(board_center, 360.0 * -(i + 1) / config.n_coils))
+                        terminal = terminal_base.rotated(board_center, 360.0 * -(i + 1) / config.n_coils)
+                        terminal.label = f"Terminal_{coil_names[-(i+1)]}"
+                        terminals.append(terminal)
 
         # Generate the coils on all layers
         coil_outside_connection_length = config.trace_width * 2
@@ -933,7 +1108,7 @@ class PCB:
                 anticlockwise = specs['anticlockwise'],
                 outside_vias = outside_vias,
                 inside_vias = inside_vias,
-                terminal = terminal,
+                terminal = terminal_base,
                 outside_connection = specs['outside_connection'],
                 inside_connection = specs['inside_connection'],
                 max_outside_connection_length = coil_outside_connection_length,
@@ -955,7 +1130,7 @@ class PCB:
                     anticlockwise = specs['anticlockwise'],
                     outside_vias = outside_vias,
                     inside_vias = inside_vias,
-                    terminal = terminal,
+                    terminal = terminal_base,
                     outside_connection = specs['outside_connection'],
                     inside_connection = specs['inside_connection'],
                     max_outside_connection_length = coil_outside_connection_length,
@@ -969,7 +1144,7 @@ class PCB:
                 coil_odd = coil_even.mirrored_y()
 
             # Generate the other coils by rotating the base coils
-            coils = []
+            layer_coils = []
             for slot in range(config.n_slots_per_phase):
                 for phase in range(config.n_phases):
                     coil_index = slot * config.n_phases + phase
@@ -979,10 +1154,11 @@ class PCB:
                     else:
                         coil = coil_odd
                     coil = coil.rotated(board_center, angle)
-                    coils.append(coil)
+                    coil.label = f"Coil_{coil_names[coil_index]}_{layer_id}"
+                    layer_coils.append(coil)
 
             # Add these coils to the current layer
-            layers[layer_id] = coils
+            coils[layer_id] = layer_coils
 
         # Connect the coils that are in series, such as A_1 with A_2
         link_vias = []
@@ -990,7 +1166,7 @@ class PCB:
             if config.n_layers >= config.n_phases:
                 # Base path for inner connections (even coils)
                 # Draw a path offset toward the inner side of the board that connects these two points for the first coil
-                connection_point_1 = layers[config.layers[-1]][0].path.start_point
+                connection_point_1 = coils[config.layers[-1]][0].path.start_point
                 connection_point_2 = connection_point_1
                 if not optimise_inner_vias:
                     connection_point_2 = connection_point_2.mirrored_y()
@@ -1014,7 +1190,7 @@ class PCB:
                 # Base path for outer connections (odd coils)
                 # Draw a path offset toward the outer side of the board that connects these two points for the first coil
                 if config.n_slots_per_phase >= 4:
-                    connection_point_1 = layers[config.layers[0]][0].path.start_point
+                    connection_point_1 = coils[config.layers[0]][0].path.start_point
                     connection_point_2 = connection_point_1.mirrored_y().rotated(board_center, config.coil_angle * config.n_phases)
                     outer_vias_radius = config.board_radius - config.board_outer_margin + config.outer_vias_offset + config.trace_spacing + config.series_link_outer_trace_width / 2.0
                     vias_circle_radius = config.board_radius - config.board_outer_margin + max(config.via_diameter / 2.0, config.series_link_outer_trace_width / 2.0) + config.trace_spacing
@@ -1037,16 +1213,20 @@ class PCB:
                 for slot_pair in range(config.n_slots_per_phase - 1):
                     for phase in range(config.n_phases):
                         angle = ((slot_pair * config.n_phases) + phase) * config.coil_angle
+                        label = f"Link_{coil_names[slot_pair * config.n_phases + phase]}_{coil_names[(slot_pair + 1) * config.n_phases + phase]}"
                         if slot_pair % 2 == 0:
                             path = base_path_inner.rotated(board_center, angle)
-                            link = Link(path, config.series_link_inner_trace_width, config.layers[phase])
+                            link = Link(path, config.series_link_inner_trace_width, config.layers[phase], label=label)
                             links.append(link)
                         else:
                             path = base_path_outer.rotated(board_center, angle)
-                            link = Link(path, config.series_link_outer_trace_width, config.layers[phase])
+                            link = Link(path, config.series_link_outer_trace_width, config.layers[phase], label=label)
                             links.append(link)
-                            link_vias.append(Via(via_pos_1, config.via_diameter, config.via_hole_diameter).rotated(board_center, angle))
-                            link_vias.append(Via(via_pos_2, config.via_diameter, config.via_hole_diameter).rotated(board_center, angle))
+                            via1_label = f"Link_via_{coil_names[slot_pair * config.n_phases + phase]}"
+                            via1 = Via(via_pos_1, config.via_diameter, config.via_hole_diameter, label=via1_label).rotated(board_center, angle)
+                            via2_label = f"Link_via_{coil_names[(slot_pair + 1) * config.n_phases + phase]}"
+                            via2 = Via(via_pos_2, config.via_diameter, config.via_hole_diameter, label=via2_label).rotated(board_center, angle)
+                            link_vias.extend([via1, via2])
             else:
                 print("Warning : unable to link the coils, not enough layers")
         vias.extend(link_vias)
@@ -1055,9 +1235,9 @@ class PCB:
         link_com_connection_point = None
         if config.link_com:
             layer_id = config.layers[0]
-            connection_point_1 = layers[layer_id][0].path.start_point
+            connection_point_1 = coils[layer_id][0].path.start_point
             connection_point_2 = connection_point_1.rotated(board_center, -config.coil_angle)
-            terminal_circle_radius = board_center.distance(terminal.center) if terminal is not None else 0
+            terminal_circle_radius = board_center.distance(terminal_base.center) if terminal_base is not None else 0
             intermediate_circle_radius = config.board_radius - config.board_outer_margin + max(config.com_link_trace_width / 2.0 + config.trace_spacing, coil_outside_connection_length)
             outer_vias_radius = config.board_radius - config.board_outer_margin + config.outer_vias_offset + config.trace_spacing + config.com_link_trace_width / 2.0
             if config.terminal_type == TerminalType.CASTELLATED:
@@ -1082,7 +1262,8 @@ class PCB:
                 base_path_com.append_segment(intermediate_point_2, fillet_radius=fillet_radius)
             for i in range(config.n_phases - 1):
                 path = base_path_com.rotated(board_center, -(i + 1) * config.coil_angle)
-                link = Link(path, config.com_link_trace_width, layer_id)
+                label = f"COM_{coil_names[-(i+2)]}_{coil_names[-(i+1)]}"
+                link = Link(path, config.com_link_trace_width, layer_id, label=label)
                 links.append(link)
             link_com_connection_point = intermediate_point_1
 
@@ -1090,50 +1271,72 @@ class PCB:
         layer_id = config.layers[0]
         if config.draw_only_layers is None or layer_id in config.draw_only_layers:
             for i in range(config.n_coils):
-                if terminal and (i < config.n_phases or (not config.link_com and i >= config.n_coils - config.n_phases) or (i == config.n_coils - 1) or not config.link_series_coils):
-                    layers[layer_id][i].path.prepend_segment(terminal.rotated(board_center, 360.0 * i / config.n_coils).center)
+                if terminal_base and (i < config.n_phases or (not config.link_com and i >= config.n_coils - config.n_phases) or (i == config.n_coils - 1) or not config.link_series_coils):
+                    coils[layer_id][i].path.prepend_segment(terminal_base.rotated(board_center, 360.0 * i / config.n_coils).center)
                 elif config.link_series_coils and link_vias and config.n_slots_per_phase >= 4 and i >= config.n_phases and i < (config.n_slots_per_phase - 1) * config.n_phases:
                     radius = board_center.distance(link_vias[0].center)
-                    layers[layer_id][i].path.prepend_segment(Point.polar(0, radius).rotated(board_center, 360.0 * i / config.n_coils))
+                    coils[layer_id][i].path.prepend_segment(Point.polar(0, radius).rotated(board_center, 360.0 * i / config.n_coils))
                 elif link_com_connection_point and config.link_com and i >= config.n_coils - config.n_phases:
-                    layers[layer_id][i].path.prepend_segment(link_com_connection_point.rotated(board_center, 360.0 * i / config.n_coils))
-
-        # Add the other layers
-        layers['outline'] = outline
+                    coils[layer_id][i].path.prepend_segment(link_com_connection_point.rotated(board_center, 360.0 * i / config.n_coils))
 
         # Create the PCB
-        return PCB(config, board_center, layers, vias, terminals, links, construction_geometry)
+        return PCB(
+            config = config,
+            board_center = board_center,
+            outline = outline,
+            coils = coils,
+            vias = vias,
+            terminals = terminals,
+            links = links,
+            construction_geometry = construction_geometry,
+        )
     
     def draw_svg(self, drawing: svg.Drawing) -> Self:
         """Draw this PCB on the given SVG drawing
         
         This method returns self and can therefore be chained."""
 
-        # Draw the layers
-        for layer, objects in self.layers.items():
-            if self.config.draw_only_layers is None or layer in self.config.draw_only_layers:
-                for object in objects:
+        # Create the SVG layers to organize the drawing.
+        # Layer groups created later will be displayed on top of the previous ones, so the board layers are reversed
+        # to have the top layer on top and bottom layer on the bottom, as expected.
+        svg_layers_ids = list(reversed(self.config.layers)) + ['outline', 'vias', 'terminals', 'construction']
+        svg_layers = {}
+        for layer_id in svg_layers_ids:
+            svg_layers[layer_id] = drawing.layer(label=layer_id.capitalize())
+
+        # Draw the coils
+        for layer_id in self.config.layers:
+            if self.config.draw_only_layers is None or layer_id in self.config.draw_only_layers:
+                for object in self.coils[layer_id]:
                     object.draw_svg(
-                        drawing,
-                        color = self.config.layers_color.get(layer),
+                        drawing = drawing,
+                        parent = svg_layers[layer_id],
+                        color = self.config.layers_color.get(layer_id),
                         thickness = self.config.trace_width,
-                        dashes = "none"
+                        dashes = "none",
                     )
 
         # Draw the link traces
         for link in self.links:
             if self.config.draw_only_layers is None or link.layer in self.config.draw_only_layers:
                 link.draw_svg(
-                    drawing,
+                    drawing = drawing,
+                    parent = svg_layers[link.layer],
                     color = self.config.layers_color.get(link.layer),
                     thickness = link.trace_width,
-                    dashes = "none"
+                    dashes = "none",
                 )
 
         # Draw the vias
         if self.config.draw_vias:
             for via in self.vias:
-                via.draw_svg(drawing, self.config.via_color, self.config.via_hole_color, self.config.via_opacity)
+                via.draw_svg(
+                    drawing = drawing,
+                    parent = svg_layers['vias'],
+                    via_color = self.config.via_color,
+                    hole_color = self.config.via_hole_color,
+                    opacity = self.config.via_opacity,
+                )
 
         # Draw the terminals
         # Castellated-hole terminals are clipped for better rendering (only when exporting with the
@@ -1145,16 +1348,37 @@ class PCB:
             clip_path.add(drawing.circle(self.board_center.to_viewport().as_tuple(), self.config.board_radius))
         if self.config.draw_terminals:
             for terminal in self.terminals:
-                terminal.draw_svg(drawing, self.config.terminal_color, self.config.terminal_hole_color, self.config.terminal_opacity, clip_path_id)
+                terminal.draw_svg(
+                    drawing = drawing,
+                    parent = svg_layers['terminals'],
+                    pad_color = self.config.terminal_color,
+                    hole_color = self.config.terminal_hole_color,
+                    opacity = self.config.terminal_opacity,
+                    clip_path_id = clip_path_id,
+                )
+
+        # Draw the outline
+        if self.config.draw_outline:
+            self.outline.draw_svg(
+                drawing = drawing,
+                parent = svg_layers['outline'],
+                color = self.config.outline_color,
+                thickness = self.config.outline_thickness,
+                dashes = "none",
+            )
 
         # Draw the construction geometry
         if self.config.draw_construction_geometry:
             for object in self.construction_geometry:
                 match object:
                     case svg.base.BaseElement():
-                        drawing.add(object)
+                        svg_layers['construction'].add(object)
                     
                     case DrawableObject():
-                        object.draw_svg(drawing)
+                        object.draw_svg(drawing, svg_layers['construction'])
+
+        # Add the groups to the final output file
+        for layer_id in svg_layers_ids:
+            drawing.add(svg_layers[layer_id])
 
         return self

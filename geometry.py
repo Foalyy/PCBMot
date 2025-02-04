@@ -270,11 +270,11 @@ class Point(Vector, DrawableObject):
         p = self.to_viewport()
         return f"{round(p.x, PRECISION)},{round(p.y, PRECISION)}"
     
-    def draw_svg(self, drawing: svg.Drawing, radius=None, color=None, opacity=None, thickness=None):
+    def draw_svg(self, drawing: svg.Drawing, parent: svg.base.BaseElement, radius=None, color=None, opacity=None, thickness=None):
         """Draw this Point on the given SVG drawing
         
         This method returns self and can therefore be chained."""
-        drawing.add(drawing.circle(self.to_viewport().as_tuple(),
+        parent.add(drawing.circle(self.to_viewport().as_tuple(),
             radius or style.point_radius,
             stroke = color or style.point_color,
             stroke_opacity = opacity or style.point_opacity,
@@ -450,7 +450,7 @@ class Line(DrawableObject):
             print("Warning: calling eval() on an horizontal Line")
         return self.a * y + self.b
     
-    def draw_svg(self, drawing: svg.Drawing, color=None, opacity=None, thickness=None, dashes=None):
+    def draw_svg(self, drawing: svg.Drawing, parent: svg.base.BaseElement, color=None, opacity=None, thickness=None, dashes=None):
         """Draw this Line on the given SVG drawing
         
         This method returns self and can therefore be chained."""
@@ -471,7 +471,7 @@ class Line(DrawableObject):
             p1 = (round(self.eval(y1), PRECISION), round(-y1, PRECISION))
             p2 = (round(self.eval(y2), PRECISION), round(-y2, PRECISION))
         
-        drawing.add(drawing.line(
+        parent.add(drawing.line(
             p1, p2,
             stroke = color or style.line_color,
             stroke_opacity = opacity or style.line_opacity,
@@ -609,12 +609,12 @@ class Segment(DrawableObject):
         radius = center.distance(p1)
         return Arc(p1, p2, radius, cross_product > 0)
     
-    def draw_svg(self, drawing: svg.Drawing, color=None, opacity=None, thickness=None, dashes=None):
+    def draw_svg(self, drawing: svg.Drawing, parent: svg.base.BaseElement, color=None, opacity=None, thickness=None, dashes=None):
         """Draw this Segment on the given SVG drawing
         
         This method returns self and can therefore be chained."""
 
-        drawing.add(drawing.line(
+        parent.add(drawing.line(
             self.p1.to_viewport().as_tuple(), self.p2.to_viewport().as_tuple(),
             stroke = color or style.line_color,
             stroke_opacity = opacity or style.line_opacity,
@@ -685,12 +685,12 @@ class Circle(DrawableObject):
             return None
         return Circle(self.center, radius)
     
-    def draw_svg(self, drawing: svg.Drawing, color=None, opacity=None, thickness=None, dashes=None):
+    def draw_svg(self, drawing: svg.Drawing, parent: svg.base.BaseElement, color=None, opacity=None, thickness=None, dashes=None):
         """Draw this Circle on the given SVG drawing
         
         This method returns self and can therefore be chained."""
 
-        drawing.add(drawing.circle(
+        parent.add(drawing.circle(
             self.center.to_viewport().as_tuple(),
             self.radius,
             stroke = color or style.circle_color,
@@ -878,12 +878,12 @@ class Arc(DrawableObject):
         radius = center.distance(p1)
         return Arc(p1, p2, radius, cross_product > 0)
     
-    def draw_svg(self, drawing: svg.Drawing, color=None, opacity=None, thickness=None, dashes=None):
+    def draw_svg(self, drawing: svg.Drawing, parent: svg.base.BaseElement, color=None, opacity=None, thickness=None, dashes=None):
         """Draw this Arc on the given SVG drawing
         
         This method returns self and can therefore be chained."""
 
-        drawing.add(drawing.path(
+        parent.add(drawing.path(
             d=f"M{self.p1.to_svg()} A{round(self.radius, PRECISION)},{round(self.radius, PRECISION)} 0 0,1 {self.p2.to_svg()}",
             stroke = color or style.arc_color,
             stroke_opacity = opacity or style.arc_opacity,
@@ -1043,7 +1043,6 @@ class Fillet:
             # Project the center point of the fillet on the adjacent lines to compute the endpoints of the arc of the fillet
             p_fillet_prev = fillet_center.projected(line_prev)
             p_fillet_next = fillet_center.projected(arc_next)
-            # Arc(p_fillet_next, p_fillet_prev, fillet_radius, reverse=anticlockwise).draw_svg(dwg)
 
             # Check if these endpoints are inside the adjacent segments
             v_prev = Vector.from_two_points(p_mid, p_prev)
@@ -1409,16 +1408,17 @@ class Path(DrawableObject):
                     current_point = element.p2
         return d
     
-    def draw_svg(self, drawing: svg.Drawing, color=None, opacity=None, thickness=None, dashes=None):
+    def draw_svg(self, drawing: svg.Drawing, parent: svg.base.BaseElement, color=None, opacity=None, thickness=None, dashes=None, label=None):
         """Draw this Path on the given SVG drawing
         
         This method returns self and can therefore be chained."""
 
-        drawing.add(drawing.path(
+        parent.add(drawing.path(
             d = self.to_svg(),
             stroke = color or style.path_color,
             stroke_opacity = opacity or style.path_opacity,
             stroke_width = thickness or style.path_thickness,
             stroke_dasharray = dashes or style.path_dashes,
+            label = label,
         ))
         return self

@@ -40,6 +40,7 @@ class Config:
         com_link_offset: float,
         draw_vias: bool,
         draw_terminals: bool,
+        draw_outline: bool,
         draw_construction_geometry: bool,
         draw_only_layers: list[str],
         svg_profile: str,
@@ -89,6 +90,7 @@ class Config:
         self.com_link_offset: float = com_link_offset
         self.draw_vias: bool = draw_vias
         self.draw_terminals: bool = draw_terminals
+        self.draw_outline: bool = draw_outline
         self.draw_construction_geometry: bool = draw_construction_geometry
         self.draw_only_layers: list[str] = draw_only_layers
         self.svg_profile = svg_profile
@@ -121,6 +123,7 @@ class Config:
         self.construction_geometry_color: str = "#848484"
         self.construction_geometry_thickness: float = board_diameter / 1000.
         self.construction_geometry_dashes: str = "0.2 0.12"
+        self.outline_color = "#D0D2CD"
         self.outline_thickness = 0.1
         self.layers_color = {
             'top': "#C83434",
@@ -131,7 +134,6 @@ class Config:
             'in4': "#DB628B",
             'in5': "#A7A5C6",
             'in6': "#28CCD9",
-            'outline': "#D0D2CD",
         }
         self.via_color = "#ECECEC"
         self.via_hole_color = "#E3B72E"
