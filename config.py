@@ -1,4 +1,5 @@
 from enum import Enum
+import math
 
 class TerminalType(Enum):
     NONE = 1
@@ -38,11 +39,14 @@ class Config:
         link_com: bool,
         com_link_trace_width: float,
         com_link_offset: float,
+        magnets_diameter: float,
+        magnets_position_radius: float,
         draw_vias: bool,
         draw_terminals: bool,
         draw_outline: bool,
         draw_construction_geometry: bool,
         draw_only_layers: list[str],
+        draw_magnets: bool,
         svg_profile: str,
     ):
         # Check parameters
@@ -88,11 +92,14 @@ class Config:
         self.link_com: bool = link_com
         self.com_link_trace_width: float = com_link_trace_width
         self.com_link_offset: float = com_link_offset
+        self.magnets_diameter: float = magnets_diameter
+        self.magnets_position_radius: float = magnets_position_radius
         self.draw_vias: bool = draw_vias
         self.draw_terminals: bool = draw_terminals
         self.draw_outline: bool = draw_outline
         self.draw_construction_geometry: bool = draw_construction_geometry
         self.draw_only_layers: list[str] = draw_only_layers
+        self.draw_magnets: bool = draw_magnets
         self.svg_profile = svg_profile
 
         # Computed parameters
@@ -117,6 +124,16 @@ class Config:
                 self.layers = ['top', 'in1', 'in2', 'in3', 'in4', 'in5', 'in6', 'bottom']
             case _:
                 raise ValueError("The number of layers must be 2, 4, 6 or 8")
+        if self.magnets_position_radius is None:
+            self.magnets_position_radius = ((self.board_radius - self.board_outer_margin) + (self.hole_radius + self.board_inner_margin)) / 2.0
+        self.n_magnets = 2 * self.n_slots_per_phase
+        if magnets_diameter is None:
+            self.magnets_diameter = round((self.board_radius - self.board_outer_margin) - (self.hole_radius + self.board_inner_margin), 1)
+        max_magnets_diameter = round((2 * math.pi * self.magnets_position_radius / self.n_magnets) * 0.9, 1)
+        if self.magnets_diameter >= max_magnets_diameter:
+            self.magnets_diameter = max_magnets_diameter
+            if magnets_diameter is not None:
+                print(f"Warning : the specified magnet diameter of {magnets_diameter}mm is too large, reducing to {self.magnets_diameter}mm")
 
         # SVG style
         self.background_color = "#001023"
@@ -141,3 +158,7 @@ class Config:
         self.terminal_color = "#E6B631"
         self.terminal_hole_color = self.background_color
         self.terminal_opacity = 1.0
+        self.magnets_color = "#9AEDFF"
+        self.magnets_thickness = 0.1
+        self.magnets_opacity = 1.0
+        self.magnets_dashes = "none"

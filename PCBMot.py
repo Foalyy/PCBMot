@@ -35,11 +35,14 @@ config = Config(
     link_com = True,
     com_link_trace_width = 0.6, # mm
     com_link_offset = 0.0, # mm
+    magnets_diameter = None,
+    magnets_position_radius = None,
     draw_vias = True,
     draw_terminals = True,
     draw_outline = True,
     draw_construction_geometry = True,
     draw_only_layers = None,
+    draw_magnets = True,
     svg_profile = 'tiny'
 )
 

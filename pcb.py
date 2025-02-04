@@ -530,7 +530,7 @@ class Coil:
             while not inside_connection.match_side(path.last().tag):
                 path.pop()
                 if len(path.elements) == 1:
-                    raise ValueError("Error : unable to connect the inside of the coil to a via, try increasing hole_diameter")
+                    raise ValueError("Error : unable to connect the inside of the coil to a via, try increasing hole_diameter or reducing n_slots_per_phase")
             
             # Replace the last element in the path with a corner connected to the target via
             last_element = path.last_geometry()
@@ -1299,7 +1299,7 @@ class PCB:
         # Create the SVG layers to organize the drawing.
         # Layer groups created later will be displayed on top of the previous ones, so the board layers are reversed
         # to have the top layer on top and bottom layer on the bottom, as expected.
-        svg_layers_ids = list(reversed(self.config.layers)) + ['outline', 'vias', 'terminals', 'construction']
+        svg_layers_ids = list(reversed(self.config.layers)) + ['outline', 'vias', 'terminals', 'magnets', 'construction']
         svg_layers = {}
         for layer_id in svg_layers_ids:
             svg_layers[layer_id] = drawing.layer(label=layer_id.capitalize())
@@ -1376,6 +1376,20 @@ class PCB:
                     
                     case DrawableObject():
                         object.draw_svg(drawing, svg_layers['construction'])
+
+        # Draw the magnets
+        if self.config.draw_magnets:
+            for i in range(self.config.n_magnets):
+                center = Point.polar(360.0 * i / self.config.n_magnets, self.config.magnets_position_radius)
+                svg_layers['magnets'].add(drawing.circle(
+                    center = center.to_viewport().as_tuple(),
+                    r = self.config.magnets_diameter / 2.0,
+                    stroke = self.config.magnets_color,
+                    stroke_width = self.config.magnets_thickness,
+                    stroke_opacity = self.config.magnets_opacity,
+                    stroke_dasharray = self.config.magnets_dashes,
+                    label = f"Magnet_{i + 1}"
+                ))
 
         # Add the groups to the final output file
         for layer_id in svg_layers_ids:
