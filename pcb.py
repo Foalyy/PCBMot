@@ -1,6 +1,6 @@
 from typing import Self
 from enum import Enum
-from config import Config, TerminalType
+from config import Config, BoardShape, TerminalType
 import svgwrite as svg
 import math
 from geometry import sin, cos, tan, asin, acos, atan, atan2
@@ -871,25 +871,72 @@ class SilkscreenText:
 class Outline:
     """The shape and dimensions of the board"""
 
-    def __init__(self, board_center: Point, board_diameter: float, hole_diameter: float):
+    def __init__(
+            self,
+            board_center: Point,
+            board_shape: BoardShape,
+            board_diameter: float,
+            hole_diameter: float,
+            board_chamfer: float,
+            board_fillet: float,
+        ):
         self.board_center = board_center
+        self.board_shape = board_shape
         self.board_diameter = board_diameter
         self.hole_diameter = hole_diameter
+        self.board_chamfer = board_chamfer
+        self.board_fillet = board_fillet
+        if self.board_chamfer is None:
+            self.board_chamfer = 0
+        self.board_chamfer = min(self.board_chamfer, self.board_diameter / 2.0)
+
+        # Calculate the shape of a square board with chamfers and fillets
+        if self.board_shape == BoardShape.SQUARE:
+            r = self.board_diameter / 2.0
+            self.path = Path(Point(0, r))
+            self.path.append_segment(Point(r - self.board_chamfer, r))
+            if self.board_chamfer > 0:
+                self.path.append_segment(Point(r, r - self.board_chamfer), fillet_radius = self.board_fillet)
+            self.path.append_segment(Point(r, -(r - self.board_chamfer)), fillet_radius = self.board_fillet)
+            if self.board_chamfer > 0:
+                self.path.append_segment(Point(r - self.board_chamfer, -r), fillet_radius = self.board_fillet)
+            self.path.append_segment(Point(-(r - self.board_chamfer), -r), fillet_radius = self.board_fillet)
+            if self.board_chamfer > 0:
+                self.path.append_segment(Point(-r, -(r - self.board_chamfer)), fillet_radius = self.board_fillet)
+            self.path.append_segment(Point(-r, r - self.board_chamfer), fillet_radius = self.board_fillet)
+            if self.board_chamfer > 0:
+                self.path.append_segment(Point(-(r - self.board_chamfer), r), fillet_radius = self.board_fillet)
+            self.path.append_segment(Point(0, r), fillet_radius = self.board_fillet)
     
     def draw_svg(self, drawing: svg.Drawing, parent: svg.base.BaseElement, color=None, thickness=None, dashes=None):
         """Draw this Outline on the given SVG drawing
         
         This method returns self and can therefore be chained."""
 
-        parent.add(drawing.circle(
-            self.board_center.to_viewport().as_tuple(),
-            self.board_diameter / 2.0,
-            stroke = color,
-            stroke_width = thickness,
-            stroke_dasharray = dashes,
-            fill = "none",
-            label = f"Outline_edge",
-        ))
+        # Draw the outer edge
+        match self.board_shape:
+            case BoardShape.ROUND:
+                parent.add(drawing.circle(
+                    self.board_center.to_viewport().as_tuple(),
+                    self.board_diameter / 2.0,
+                    stroke = color,
+                    stroke_width = thickness,
+                    stroke_dasharray = dashes,
+                    fill = "none",
+                    label = f"Outline_edge",
+                ))
+            case BoardShape.SQUARE:
+                self.path.draw_svg(
+                    drawing,
+                    parent,
+                    color = color,
+                    opacity = 1.0,
+                    thickness = thickness,
+                    dashes = dashes,
+                    label = f"Outline_edge",
+                )
+        
+        # Draw the inner hole
         parent.add(drawing.circle(
             self.board_center.to_viewport().as_tuple(),
             self.hole_diameter / 2.0,
@@ -899,22 +946,36 @@ class Outline:
             fill = "none",
             label = f"Outline_hole",
         ))
+        
         return self
     
     def draw_kicad(self, kicadpcb: KicadPCB, width: float) -> Self:
         """Draw this Outline on the given Kicad board"""
-        kicadpcb.gr_circle(
-            center = self.board_center,
-            radius = self.board_diameter / 2.0,
-            width = width,
-            layer = 'outline',
-        )
+
+        # Draw the outer edge
+        match self.board_shape:
+            case BoardShape.ROUND:
+                kicadpcb.gr_circle(
+                    center = self.board_center,
+                    radius = self.board_diameter / 2.0,
+                    width = width,
+                    layer = 'outline',
+                )
+            case BoardShape.SQUARE:
+                kicadpcb.gr_path(
+                    path = self.path,
+                    width = width,
+                    layer = 'outline',
+                )
+
+        # Draw the inner hole
         kicadpcb.gr_circle(
             center = self.board_center,
             radius = self.hole_diameter / 2.0,
             width = width,
             layer = 'outline',
         )
+
         return self
 
 class PCB:
@@ -964,7 +1025,14 @@ class PCB:
         board_center = Point.origin()
 
         # Board outline
-        outline = Outline(board_center, config.board_diameter, config.hole_diameter)
+        outline = Outline(
+            board_center = board_center,
+            board_shape = config.board_shape,
+            board_diameter = config.board_diameter,
+            hole_diameter = config.hole_diameter,
+            board_chamfer = config.board_chamfer,
+            board_fillet = config.board_fillet,
+        )
 
         # Construction geometry
         construction_geometry = [

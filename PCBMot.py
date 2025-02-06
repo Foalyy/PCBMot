@@ -1,6 +1,6 @@
 from typing import Self
 from inkscape_drawing import InkscapeDrawing
-from config import Config, TerminalType
+from config import Config, BoardShape, TerminalType
 from pcb import PCB
 from kicad import KicadPCB
 
@@ -9,13 +9,16 @@ from kicad import KicadPCB
 KICADPCB_FILENAME = 'example.kicad_pcb'
 SVG_FILENAME = 'example.svg'
 config = Config(
-    board_diameter = 80, # mm
-    hole_diameter = 45, # mm
+    board_shape = BoardShape.SQUARE,
+    board_diameter = 42, # mm
+    hole_diameter = 20, # mm
+    board_chamfer = 4, # mm
+    board_fillet = 3, # mm
     board_thickness = 1.0, #mm
     board_outer_margin = 1.8, # mm
     board_inner_margin = 1.0, # mm
     n_phases = 3,
-    n_slots_per_phase = 8,
+    n_slots_per_phase = 4,
     coil_angle = None,
     n_layers = 8,
     four_layers_inside_vias = False,

@@ -219,6 +219,19 @@ class KicadPCB:
             ]
         )
     
+    def gr_path(self, path: Path, width: float, layer: str, stroke_type: str = 'solid'):
+        """Add a graphical path to the board"""
+        p1 = path.start_point
+        for element in path.elements:
+            match element:
+                case PathSegment():
+                    self.gr_line(p1, element.p2, width, layer, stroke_type)
+                    p1 = element.p2
+                case PathArc():
+                    arc = Arc(p1, element.p2, element.radius, element.anticlockwise)
+                    self.gr_arc(arc.p1, arc.p2, arc.midpoint(), width, layer, stroke_type)
+                    p1 = element.p2
+    
     def text(self, text: str, center: Point, angle: float, font_size: float, layer: str):
         """Add a text to the board"""
         self.data.append(

@@ -1,6 +1,10 @@
 from enum import Enum
 import math
 
+class BoardShape(Enum):
+    ROUND = 1
+    SQUARE = 2
+
 class TerminalType(Enum):
     NONE = 1
     THROUGH_HOLE = 2
@@ -11,8 +15,11 @@ class TerminalType(Enum):
 class Config:
     def __init__(
         self,
+        board_shape: BoardShape,
         board_diameter: float,
         hole_diameter: float,
+        board_chamfer: float,
+        board_fillet: float,
         board_thickness: float,
         board_outer_margin: float,
         board_inner_margin: float,
@@ -69,8 +76,11 @@ class Config:
             raise ValueError("Invalid terminal type")
         
         # Save parameters
+        self.board_shape: BoardShape = board_shape
         self.board_diameter: float = board_diameter
         self.hole_diameter: float = hole_diameter
+        self.board_chamfer: float = board_chamfer
+        self.board_fillet: float = board_fillet
         self.board_thickness: float = board_thickness
         self.board_outer_margin: float = board_outer_margin
         self.board_inner_margin: float = board_inner_margin

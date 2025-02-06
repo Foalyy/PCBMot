@@ -1442,7 +1442,16 @@ class Path(DrawableObject):
                     current_point = element.p2
         return d
     
-    def draw_svg(self, drawing: svg.Drawing, parent: svg.base.BaseElement, color=None, opacity=None, thickness=None, dashes=None, label=None):
+    def draw_svg(
+            self,
+            drawing: svg.Drawing,
+            parent: svg.base.BaseElement,
+            color: str =None,
+            opacity: float = None,
+            thickness: float = None,
+            dashes: str = None,
+            label: str = None,
+        ):
         """Draw this Path on the given SVG drawing
         
         This method returns self and can therefore be chained."""
