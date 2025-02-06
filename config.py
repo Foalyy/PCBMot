@@ -53,6 +53,7 @@ class Config:
         com_link_offset: float,
         coil_names_font_size: float,
         coil_names_offset: float,
+        rotation: float,
         magnets_diameter: float,
         magnets_position_radius: float,
         draw_vias: bool,
@@ -118,6 +119,7 @@ class Config:
         self.com_link_offset: float = com_link_offset
         self.coil_names_font_size: float = coil_names_font_size
         self.coil_names_offset: float = coil_names_offset
+        self.rotation: float = rotation
         self.magnets_diameter: float = magnets_diameter
         self.magnets_position_radius: float = magnets_position_radius
         self.draw_vias: bool = draw_vias
@@ -170,6 +172,8 @@ class Config:
             self.magnets_diameter = max_magnets_diameter
             if magnets_diameter is not None:
                 print(f"Warning : the specified magnet diameter of {magnets_diameter}mm is too large, reducing to {self.magnets_diameter}mm")
+        if self.rotation is None:
+            self.rotation = 0.0
 
         # SVG style
         self.background_color = "#001023"

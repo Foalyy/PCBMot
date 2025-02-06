@@ -504,6 +504,10 @@ class Segment(DrawableObject):
         """Return the angle of this Segment in the range [-90°:90°] relative to the vertical axis"""
         return self.line().angle()
     
+    def rotated(self, center: Self, angle: float) -> Self:
+        """Create a copy of this Segment rotated around the given center point by the given angle"""
+        return Segment(self.p1.rotated(center, angle), self.p2.rotated(center, angle))
+    
     def unit_vector(self) -> Vector:
         """Return a new Vector of length 1 parallel to this line
         
@@ -643,6 +647,10 @@ class Circle(DrawableObject):
 
     def __str__(self) -> str:
         return f"Circle(center={self.center}, radius={self.radius})"
+    
+    def rotated(self, center: Self, angle: float) -> Self:
+        """Create a copy of this Circle rotated around the given center point by the given angle"""
+        return Circle(self.center.rotated(center, angle), self.radius)
 
     def intersect(self, object, suppress_warning: bool = False) -> Point:
         """Calculate the intersection Point between this Circle and the given object
@@ -756,6 +764,10 @@ class Arc(DrawableObject):
         shrinked by the given factor.
         """
         return Arc(self.p1, self.p1.rotated(self.center(), self.angle() * factor), self.radius)
+    
+    def rotated(self, center: Self, angle: float) -> Self:
+        """Create a copy of this Segment rotated around the given center point by the given angle"""
+        return Arc(self.p1.rotated(center, angle), self.p2.rotated(center, angle), self.radius, self.reverse)
     
     def center(self) -> Point:
         """Calculate the center Point of this Arc"""

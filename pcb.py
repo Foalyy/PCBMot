@@ -120,6 +120,10 @@ class Via:
             label = self.label,
         )
     
+    def rotate(self, rotation_center: Self, angle: float):
+        """Rotate this Via around the given center point by the given angle"""
+        self.center = self.center.rotated(rotation_center, angle)
+    
     def rotated(self, rotation_center: Self, angle: float) -> Self:
         """Create a copy of this Via rotated around the given center point by the given angle"""
         via = self.copy()
@@ -248,6 +252,11 @@ class Terminal:
             label = self.label,
             pad_name = self.pad_name,
         )
+
+    def rotate(self, rotation_center: Self, angle: float):
+        """Rotate this Terminal around the given center point by the given angle"""
+        self.center = self.center.rotated(rotation_center, angle)
+        self.angle += angle
 
     def rotated(self, rotation_center: Self, angle: float) -> Self:
         """Create a copy of this Terminal rotated around the given center point by the given angle"""
@@ -644,6 +653,11 @@ class Coil:
             label = self.label
         )
 
+    def rotate(self, center: Self, angle: float):
+        """Rotate this Coil around the given center point by the given angle"""
+        self.path = self.path.rotated(center, angle)
+        self.rotation += angle
+
     def rotated(self, center: Self, angle: float) -> Self:
         """Create a copy of this Coil rotated around the given center point by the given angle"""
         coil = self.copy()
@@ -762,6 +776,10 @@ class Link:
             label = self.label
         )
 
+    def rotate(self, center: Self, angle: float):
+        """Rotate this Link around the given center point by the given angle"""
+        self.path = self.path.rotated(center, angle)
+
     def rotated(self, center: Self, angle: float) -> Self:
         """Create a copy of this Link rotated around the given center point by the given angle"""
         link = self.copy()
@@ -832,6 +850,11 @@ class SilkscreenText:
         self.layer: str = layer
         self.font_family: float = font_family
         self.label: float = label
+
+    def rotate(self, center: Self, angle: float):
+        """Rotate this text around the given center point by the given angle"""
+        self.position = self.position.rotated(center, angle)
+        self.rotation += angle
     
     def draw_svg(
         self,
@@ -1601,6 +1624,26 @@ class PCB:
                     label = f"Coil_name_{coil_names[i]}",
                 ))
 
+        # Apply the final rotation on everything on the board except the outline and mountpoints
+        if config.rotation:
+            for layer in coils:
+                for coil in coils[layer]:
+                    coil.rotate(board_center, config.rotation)
+            for via in vias:
+                via.rotate(board_center, config.rotation)
+            for terminal in terminals:
+                terminal.rotate(board_center, config.rotation)
+            for link in links:
+                link.rotate(board_center, config.rotation)
+            for element in top_silk:
+                element.rotate(board_center, config.rotation)
+            for element in bottom_silk:
+                element.rotate(board_center, config.rotation)
+            construction_geometry_rotated = []
+            for element in construction_geometry:
+                construction_geometry_rotated.append(element.rotated(board_center, config.rotation))
+            construction_geometry = construction_geometry_rotated
+
         # Create the PCB
         return PCB(
             config = config,
@@ -1728,7 +1771,7 @@ class PCB:
         # Draw the magnets
         if self.config.draw_magnets:
             for i in range(self.config.n_magnets):
-                center = Point.polar(360.0 * i / self.config.n_magnets, self.config.magnets_position_radius)
+                center = Point.polar(360.0 * i / self.config.n_magnets + self.config.rotation, self.config.magnets_position_radius)
                 svg_layers['magnets'].add(drawing.circle(
                     center = center.to_viewport().as_tuple(),
                     r = self.config.magnets_diameter / 2.0,
