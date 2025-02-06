@@ -871,24 +871,20 @@ class SilkscreenText:
 class Outline:
     """The shape and dimensions of the board"""
 
-    def __init__(
-            self,
-            board_center: Point,
-            board_shape: BoardShape,
-            board_diameter: float,
-            hole_diameter: float,
-            board_chamfer: float,
-            board_fillet: float,
-        ):
+    def __init__(self, board_center: Point, config: Config):
         self.board_center = board_center
-        self.board_shape = board_shape
-        self.board_diameter = board_diameter
-        self.hole_diameter = hole_diameter
-        self.board_chamfer = board_chamfer
-        self.board_fillet = board_fillet
+        self.board_shape = config.board_shape
+        self.board_diameter = config.board_diameter
+        self.hole_diameter = config.hole_diameter
+        self.board_chamfer = config.board_chamfer
+        self.board_fillet = config.board_fillet
         if self.board_chamfer is None:
             self.board_chamfer = 0
         self.board_chamfer = min(self.board_chamfer, self.board_diameter / 2.0)
+        self.n_mountpoints = config.n_mountpoints
+        self.mountpoints_position_radius = config.mountpoints_position_radius
+        self.mountpoints_diameter = config.mountpoints_diameter
+        self.mountpoints_marking_diameter = config.mountpoints_marking_diameter
 
         # Calculate the shape of a square board with chamfers and fillets
         if self.board_shape == BoardShape.SQUARE:
@@ -908,15 +904,27 @@ class Outline:
                 self.path.append_segment(Point(-(r - self.board_chamfer), r), fillet_radius = self.board_fillet)
             self.path.append_segment(Point(0, r), fillet_radius = self.board_fillet)
     
-    def draw_svg(self, drawing: svg.Drawing, parent: svg.base.BaseElement, color=None, thickness=None, dashes=None):
+    def draw_svg(
+            self,
+            drawing: svg.Drawing,
+            parent: svg.base.BaseElement,
+            color: str = None,
+            thickness: float = None,
+            dashes: str = None,
+            marking_color: str = None,
+            marking_thickness: float = None,
+        ):
         """Draw this Outline on the given SVG drawing
         
         This method returns self and can therefore be chained."""
 
+        # Group the two circles together
+        group = drawing.g(label = "Outline")
+
         # Draw the outer edge
         match self.board_shape:
-            case BoardShape.ROUND:
-                parent.add(drawing.circle(
+            case BoardShape.CIRCLE:
+                group.add(drawing.circle(
                     self.board_center.to_viewport().as_tuple(),
                     self.board_diameter / 2.0,
                     stroke = color,
@@ -928,7 +936,7 @@ class Outline:
             case BoardShape.SQUARE:
                 self.path.draw_svg(
                     drawing,
-                    parent,
+                    group,
                     color = color,
                     opacity = 1.0,
                     thickness = thickness,
@@ -937,7 +945,7 @@ class Outline:
                 )
         
         # Draw the inner hole
-        parent.add(drawing.circle(
+        group.add(drawing.circle(
             self.board_center.to_viewport().as_tuple(),
             self.hole_diameter / 2.0,
             stroke = color,
@@ -946,15 +954,40 @@ class Outline:
             fill = "none",
             label = f"Outline_hole",
         ))
+
+        # Draw the mountpoints
+        if self.n_mountpoints is not None:
+            for i in range(self.n_mountpoints):
+                center = Point.polar((i + 0.5) * 360 / self.n_mountpoints, self.mountpoints_position_radius)
+                group.add(drawing.circle(
+                    center.to_viewport().as_tuple(),
+                    self.mountpoints_diameter / 2.0,
+                    stroke = color,
+                    stroke_width = thickness,
+                    stroke_dasharray = dashes,
+                    fill = "none",
+                    label = f"Mountpoint_{i}",
+                ))
+                group.add(drawing.circle(
+                    center.to_viewport().as_tuple(),
+                    self.mountpoints_marking_diameter / 2.0,
+                    stroke = marking_color,
+                    stroke_width = marking_thickness,
+                    fill = "none",
+                    label = f"Mountpoint_marking_{i}",
+                ))
+
+        # Add the group to the parent
+        parent.add(group)
         
         return self
     
-    def draw_kicad(self, kicadpcb: KicadPCB, width: float) -> Self:
+    def draw_kicad(self, kicadpcb: KicadPCB, width: float, marking_width: float) -> Self:
         """Draw this Outline on the given Kicad board"""
 
         # Draw the outer edge
         match self.board_shape:
-            case BoardShape.ROUND:
+            case BoardShape.CIRCLE:
                 kicadpcb.gr_circle(
                     center = self.board_center,
                     radius = self.board_diameter / 2.0,
@@ -975,6 +1008,29 @@ class Outline:
             width = width,
             layer = 'outline',
         )
+
+        # Draw the mountpoints
+        if self.n_mountpoints is not None:
+            for i in range(self.n_mountpoints):
+                center = Point.polar((i + 0.5) * 360 / self.n_mountpoints, self.mountpoints_position_radius)
+                kicadpcb.gr_circle(
+                    center = center,
+                    radius = self.mountpoints_diameter / 2.0,
+                    width = width,
+                    layer = 'outline',
+                )
+                kicadpcb.gr_circle(
+                    center = center,
+                    radius = self.mountpoints_marking_diameter / 2.0,
+                    width = marking_width,
+                    layer = 'top_silk',
+                )
+                kicadpcb.gr_circle(
+                    center = center,
+                    radius = self.mountpoints_marking_diameter / 2.0,
+                    width = marking_width,
+                    layer = 'bottom_silk',
+                )
 
         return self
 
@@ -1025,14 +1081,7 @@ class PCB:
         board_center = Point.origin()
 
         # Board outline
-        outline = Outline(
-            board_center = board_center,
-            board_shape = config.board_shape,
-            board_diameter = config.board_diameter,
-            hole_diameter = config.hole_diameter,
-            board_chamfer = config.board_chamfer,
-            board_fillet = config.board_fillet,
-        )
+        outline = Outline(board_center, config)
 
         # Construction geometry
         construction_geometry = [
@@ -1062,6 +1111,13 @@ class PCB:
                 radius = config.hole_radius + config.board_inner_margin,
             ),
         ]
+        if config.board_shape != BoardShape.CIRCLE:
+            construction_geometry.append(
+                Circle(
+                    center = board_center,
+                    radius = config.board_radius,
+                )
+            )
 
         # Specific generation settings for each layer : coil direction and vias connections
         layers_specs = {}
@@ -1649,6 +1705,8 @@ class PCB:
                 color = self.config.outline_color,
                 thickness = self.config.outline_thickness,
                 dashes = "none",
+                marking_color = self.config.top_silk_color,
+                marking_thickness = self.config.silk_thickness,
             )
 
         # Draw the construction geometry
@@ -1726,6 +1784,7 @@ class PCB:
             self.outline.draw_kicad(
                 kicadpcb = kicadpcb,
                 width = self.config.trace_width,
+                marking_width = self.config.silk_thickness,
             )
 
         # Draw the construction geometry

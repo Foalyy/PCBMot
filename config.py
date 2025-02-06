@@ -2,7 +2,7 @@ from enum import Enum
 import math
 
 class BoardShape(Enum):
-    ROUND = 1
+    CIRCLE = 1
     SQUARE = 2
 
 class TerminalType(Enum):
@@ -20,6 +20,10 @@ class Config:
         hole_diameter: float,
         board_chamfer: float,
         board_fillet: float,
+        n_mountpoints: int,
+        mountpoints_position_radius: float,
+        mountpoints_diameter: float,
+        mountpoints_marking_diameter: float,
         board_thickness: float,
         board_outer_margin: float,
         board_inner_margin: float,
@@ -81,6 +85,10 @@ class Config:
         self.hole_diameter: float = hole_diameter
         self.board_chamfer: float = board_chamfer
         self.board_fillet: float = board_fillet
+        self.n_mountpoints: int = n_mountpoints
+        self.mountpoints_position_radius: float = mountpoints_position_radius
+        self.mountpoints_diameter: float = mountpoints_diameter
+        self.mountpoints_marking_diameter: float = mountpoints_marking_diameter
         self.board_thickness: float = board_thickness
         self.board_outer_margin: float = board_outer_margin
         self.board_inner_margin: float = board_inner_margin
@@ -183,6 +191,7 @@ class Config:
         }
         self.top_silk_color = "#EEEFA4"
         self.bottom_silk_color = "#E6B2A4"
+        self.silk_thickness = board_diameter / 300
         self.silk_font_family = "Arial, sans-serif"
         self.via_color = "#ECECEC"
         self.via_hole_color = "#E3B72E"
