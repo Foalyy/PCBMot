@@ -25,27 +25,27 @@ PRECISION = 10
 ## SVG default drawing style
 class SVGStyle:
     point_color: str = "#C02020"
-    point_opacity: float = 0.5
+    point_opacity: float = 0.7
     point_radius: float = 0.15
     point_thickness: float = 0.05
 
     line_color: str = "#37C837"
-    line_opacity: float = 0.5
+    line_opacity: float = 0.7
     line_thickness: float = 0.05
     line_dashes: str = "0.2 0.12"
 
     circle_color: str = "#37C837"
-    circle_opacity: float = 0.5
+    circle_opacity: float = 0.7
     circle_thickness: float = 0.05
     circle_dashes: str = "0.2 0.12"
 
     arc_color: str = "#37C837"
-    arc_opacity: float = 0.5
+    arc_opacity: float = 0.7
     arc_thickness: float = 0.05
     arc_dashes = "0.2 0.12"
 
     path_color: str = "#37C837"
-    path_opacity: float = 0.5
+    path_opacity: float = 0.7
     path_thickness: float = 0.05
     path_dashes = "0.2 0.12"
 
@@ -622,6 +622,17 @@ class Segment(DrawableObject):
             stroke_dasharray = dashes or style.line_dashes,
         ))
         return self
+    
+    def draw_kicad(self, kicadpcb: "KicadPCB", width: float, layer: str, stroke_type: str = 'solid') -> Self:
+        """Draw this Segment on the given Kicad board"""
+        kicadpcb.gr_line(
+            p1 = self.p1,
+            p2 = self.p2,
+            width = width,
+            layer = layer,
+            stroke_type = stroke_type,
+        )
+        return self
 
 class Circle(DrawableObject):
     """A 2D circle represented by its center and radius"""
@@ -698,6 +709,17 @@ class Circle(DrawableObject):
             stroke_width = thickness or style.circle_thickness,
             stroke_dasharray = dashes or style.circle_dashes,
         ))
+        return self
+    
+    def draw_kicad(self, kicadpcb: "KicadPCB", width: float, layer: str, stroke_type: str = 'solid') -> Self:
+        """Draw this Circle on the given Kicad board"""
+        kicadpcb.gr_circle(
+            center = self.center,
+            radius = self.radius,
+            width = width,
+            layer = layer,
+            stroke_type = stroke_type,
+        )
         return self
 
 
@@ -890,6 +912,18 @@ class Arc(DrawableObject):
             stroke_width = thickness or style.arc_thickness,
             stroke_dasharray = dashes or style.arc_dashes,
         ))
+        return self
+    
+    def draw_kicad(self, kicadpcb: "KicadPCB", width: float, layer: str, stroke_type: str = 'solid') -> Self:
+        """Draw this Arc on the given Kicad board"""
+        kicadpcb.gr_arc(
+            p1 = self.p1,
+            p2 = self.p2,
+            midpoint = self.midpoint(),
+            width = width,
+            layer = layer,
+            stroke_type = stroke_type,
+        )
         return self
 
 

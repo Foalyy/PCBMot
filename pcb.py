@@ -5,6 +5,7 @@ import svgwrite as svg
 import math
 from geometry import sin, cos, tan, asin, acos, atan, atan2
 from geometry import DrawableObject, Vector, Point, Line, Segment, Circle, Arc, PathSegment, PathArc, Path
+from kicad import KicadPCB
 
 class CoilSide(Enum):
     """Enum that describes the four sides of a coil: OUTER, RIGHT, INNER, and LEFT"""
@@ -109,35 +110,33 @@ class Via:
             case _:
                 return self.center.distance(object) - self.diameter / 2.0
     
-    def rotated(self, rotation_center: Self, angle: float) -> Self:
-        """Create a copy of this Via rotated around the given center point by the given angle"""
+    def copy(self) -> Self:
+        """Create a copy of this Via"""
         return Via(
-            center = self.center.rotated(rotation_center, angle),
+            center = self.center,
             diameter = self.diameter,
             hole_diameter = self.hole_diameter,
             tag = self.tag,
             label = self.label,
         )
+    
+    def rotated(self, rotation_center: Self, angle: float) -> Self:
+        """Create a copy of this Via rotated around the given center point by the given angle"""
+        via = self.copy()
+        via.center = self.center.rotated(rotation_center, angle)
+        return via
     
     def mirrored_x(self) -> Self:
         """Create a copy of this Via mirrored about the X axis"""
-        return Via(
-            center = self.center.mirrored_x(),
-            diameter = self.diameter,
-            hole_diameter = self.hole_diameter,
-            tag = self.tag,
-            label = self.label,
-        )
+        via = self.copy()
+        via.center = self.center.mirrored_x()
+        return via
     
     def mirrored_y(self) -> Self:
         """Create a copy of this Via mirrored about the Y axis"""
-        return Via(
-            center = self.center.mirrored_y(),
-            diameter = self.diameter,
-            hole_diameter = self.hole_diameter,
-            tag = self.tag,
-            label = self.label,
-        )
+        via = self.copy()
+        via.center = self.center.mirrored_y()
+        return via
     
     def draw_svg(
             self,
@@ -179,6 +178,15 @@ class Via:
 
         return self
     
+    def draw_kicad(self, kicadpcb: KicadPCB) -> Self:
+        """Draw this Via on the given Kicad board"""
+        kicadpcb.via(
+            center = self.center,
+            diameter = self.diameter,
+            hole_diameter = self.hole_diameter,
+        )
+        return self
+    
     def closest_in_list(vias: list[Self], object) -> tuple[Self, float]:
         """Class method that returns the Via in the given list that is closest to the given object
         
@@ -195,13 +203,25 @@ class Via:
 class Terminal:
     """A terminal for external connection on the board"""
 
-    def __init__(self, center: Point, terminal_type: TerminalType, diameter: float, hole_diameter: float, tag=None, label: str = None):
+    def __init__(
+            self,
+            center: Point,
+            terminal_type: TerminalType,
+            diameter: float,
+            hole_diameter: float,
+            angle: float = None,
+            tag=None,
+            label: str = None,
+            pad_name: str = None,
+        ):
         self.center: Point = center
         self.terminal_type: TerminalType = terminal_type
         self.diameter: float = diameter
         self.hole_diameter: float = hole_diameter
+        self.angle: float = angle
         self.tag = tag
         self.label = label
+        self.pad_name = pad_name
     
     def distance(self, object) -> float:
         """Calculate the distance between this Terminal and the given object
@@ -216,38 +236,39 @@ class Terminal:
             case _:
                 return self.center.distance(object) - self.diameter / 2.0
     
-    def rotated(self, rotation_center: Self, angle: float) -> Self:
-        """Create a copy of this Terminal rotated around the given center point by the given angle"""
+    def copy(self) -> Self:
+        """Create a copy of this Terminal"""
         return Terminal(
-            center = self.center.rotated(rotation_center, angle),
+            center = self.center,
             terminal_type = self.terminal_type,
             diameter = self.diameter,
             hole_diameter = self.hole_diameter,
+            angle = self.angle,
             tag = self.tag,
             label = self.label,
+            pad_name = self.pad_name,
         )
+
+    def rotated(self, rotation_center: Self, angle: float) -> Self:
+        """Create a copy of this Terminal rotated around the given center point by the given angle"""
+        terminal = self.copy()
+        terminal.center = terminal.center.rotated(rotation_center, angle)
+        terminal.angle = angle
+        return terminal
     
     def mirrored_x(self) -> Self:
         """Create a copy of this Terminal mirrored about the X axis"""
-        return Terminal(
-            center = self.center.mirrored_x(),
-            terminal_type = self.terminal_type,
-            diameter = self.diameter,
-            hole_diameter = self.hole_diameter,
-            tag = self.tag,
-            label = self.label,
-        )
+        terminal = self.copy
+        terminal.center = terminal.center.mirrored_x()
+        terminal.angle += 180
+        return terminal
     
     def mirrored_y(self) -> Self:
         """Create a copy of this Terminal mirrored about the Y axis"""
-        return Terminal(
-            center = self.center.mirrored_y(),
-            terminal_type = self.terminal_type,
-            diameter = self.diameter,
-            hole_diameter = self.hole_diameter,
-            tag = self.tag,
-            label = self.label,
-        )
+        terminal = self.copy
+        terminal.center = terminal.center.mirrored_y()
+        terminal.angle = -terminal.angle
+        return terminal
     
     def draw_svg(
             self,
@@ -255,6 +276,9 @@ class Terminal:
             parent: svg.base.BaseElement,
             pad_color: str,
             hole_color: str,
+            ref_font_family: str,
+            ref_color: str,
+            ref_font_size_factor: float,
             opacity: float = None,
             clip_path_id = None
         ):
@@ -311,10 +335,51 @@ class Terminal:
                     label = f"{self.label}_hole" if self.label is not None else None,
                 ))
 
+        # Draw the ref
+        ref_pos, ref_angle, ref_size = self._ref_pos(- self.diameter * 0.35)
+        group.add(drawing.text(
+            text = self.pad_name,
+            insert = ref_pos.to_viewport().as_tuple(),
+            stroke = "none",
+            fill = ref_color,
+            text_anchor = "middle",
+            font_size = ref_size * ref_font_size_factor,
+            font_family = ref_font_family,
+            font_weight = "bolder",
+            transform = f"rotate({ref_angle}, {ref_pos.to_svg()})",
+            label = f"{self.label}_ref",
+        ))
+
         # Add the group to the parent
         parent.add(group)
 
         return self
+    
+    def draw_kicad(self, kicadpcb: KicadPCB) -> Self:
+        """Draw this Terminal on the given Kicad board"""
+        ref_pos, ref_angle, ref_size = self._ref_pos(- self.diameter * 0.08)
+        kicadpcb.terminal(
+            center = self.center,
+            diameter = self.diameter,
+            hole_diameter = self.hole_diameter,
+            ref = self.pad_name,
+            ref_offset = ref_pos - self.center,
+            ref_angle = ref_angle,
+            ref_size = ref_size,
+        )
+        return self
+    
+    def _ref_pos(self, offset: float) -> tuple[Vector, float, float]:
+        board_center = Point.origin()
+        ref_size = self.diameter * 0.7
+        angle_offset = 180 * ((self.diameter / 2) * 1.4 + len(self.pad_name) * ref_size / 2) / (math.pi * board_center.distance(self.center))
+        ref_pos = self.center.rotated(board_center, angle_offset)
+        if ref_pos.y < 0:
+            offset = -offset
+        ref_pos = ref_pos.offset(Line.from_two_points(board_center, ref_pos), offset)
+        ref_angle = self.angle + angle_offset
+        return ref_pos, ref_angle, ref_size
+
 
 class Coil:
     """A single coil on the board"""
@@ -569,36 +634,34 @@ class Coil:
         if anticlockwise:
             path = path.mirrored_y()
         return Coil(path, 0.0, n_turns)
+    
+    def copy(self) -> Self:
+        """Create a copy of this Coil"""
+        return Coil(
+            path = self.path,
+            rotation = self.rotation,
+            n_turns = self.n_turns,
+            label = self.label
+        )
 
     def rotated(self, center: Self, angle: float) -> Self:
         """Create a copy of this Coil rotated around the given center point by the given angle"""
-        path = self.path.rotated(center, angle)
-        return Coil(
-            path = path,
-            rotation = self.rotation + angle,
-            n_turns = self.n_turns,
-            label = self.label,
-        )
+        coil = self.copy()
+        coil.path = coil.path.rotated(center, angle)
+        coil.rotation = self.rotation + angle
+        return coil
     
     def mirrored_x(self) -> Self:
         """Create a copy of this Coil mirrored about the X axis"""
-        path = self.path.mirrored_x()
-        return Coil(
-            path = path,
-            rotation = self.rotation,
-            n_turns = self.n_turns,
-            label = self.label,
-        )
+        coil = self.copy()
+        coil.path = coil.path.mirrored_x()
+        return coil
     
     def mirrored_y(self) -> Self:
         """Create a copy of this Coil mirrored about the Y axis"""
-        path = self.path.mirrored_y()
-        return Coil(
-            path = path,
-            rotation = -self.rotation,
-            n_turns = self.n_turns,
-            label = self.label,
-        )
+        coil = self.copy()
+        coil.path = coil.path.mirrored_y()
+        return coil
     
     def draw_svg(
             self,
@@ -621,6 +684,15 @@ class Coil:
             thickness = thickness,
             dashes = dashes,
             label = self.label,
+        )
+        return self
+    
+    def draw_kicad(self, kicadpcb: KicadPCB, width: float, layer: str) -> Self:
+        """Draw this Coil on the given Kicad board"""
+        kicadpcb.path(
+            path = self.path,
+            width = width,
+            layer = layer,
         )
         return self
     
@@ -680,36 +752,33 @@ class Link:
         self.trace_width: float = trace_width
         self.layer: str = layer
         self.label: str = label
+    
+    def copy(self) -> Self:
+        """Create a copy of this Link"""
+        return Link(
+            path = self.path,
+            trace_width = self.trace_width,
+            layer = self.layer,
+            label = self.label
+        )
 
     def rotated(self, center: Self, angle: float) -> Self:
         """Create a copy of this Link rotated around the given center point by the given angle"""
-        path = self.path.rotated(center, angle)
-        return Link(
-            path = path,
-            trace_width = self.trace_width,
-            layer = self.layer,
-            label = self.label
-        )
+        link = self.copy()
+        link.path = self.path.rotated(center, angle)
+        return link
     
     def mirrored_x(self) -> Self:
         """Create a copy of this Link mirrored about the X axis"""
-        path = self.path.mirrored_x()
-        return Link(
-            path = path,
-            trace_width = self.trace_width,
-            layer = self.layer,
-            label = self.label
-        )
+        link = self.copy()
+        link.path = self.path.mirrored_x()
+        return link
     
     def mirrored_y(self) -> Self:
         """Create a copy of this Link mirrored about the Y axis"""
-        path = self.path.mirrored_y()
-        return Link(
-            path = path,
-            trace_width = self.trace_width,
-            layer = self.layer,
-            label = self.label
-        )
+        link = self.copy()
+        link.path = self.path.mirrored_y()
+        return link
     
     def draw_svg(
             self,
@@ -717,7 +786,6 @@ class Link:
             parent: svg.base.BaseElement,
             color: str = None,
             opacity: float = None,
-            thickness: float = None,
             dashes: str = None,
         ):
         """Draw this Link on the given SVG drawing
@@ -729,20 +797,39 @@ class Link:
             parent = parent,
             color = color,
             opacity = opacity,
-            thickness = thickness,
+            thickness = self.trace_width,
             dashes = dashes,
             label = self.label,
+        )
+        return self
+    
+    def draw_kicad(self, kicadpcb: KicadPCB) -> Self:
+        """Draw this Link on the given Kicad board"""
+        kicadpcb.path(
+            path = self.path,
+            width = self.trace_width,
+            layer = self.layer,
         )
         return self
 
 class SilkscreenText:
     """A text printed on the silkscreen layer"""
 
-    def __init__(self, text: str, position: Point, size: float, rotation: float, font_family: str = None, label: str = None):
+    def __init__(
+            self,
+            text: str,
+            position: Point,
+            size: float,
+            rotation: float,
+            layer: str,
+            font_family: str = None,
+            label: str = None
+        ):
         self.text: str = text
         self.position: Point = position
         self.size: float = size
         self.rotation: float = rotation
+        self.layer: str = layer
         self.font_family: float = font_family
         self.label: float = label
     
@@ -769,6 +856,17 @@ class SilkscreenText:
             label = self.label,
         ))
         return self
+    
+    def draw_kicad(self, kicadpcb: KicadPCB) -> Self:
+        """Draw this text on the given Kicad board"""
+        kicadpcb.text(
+            text = self.text,
+            center = self.position,
+            angle = self.rotation,
+            font_size = self.size,
+            layer = self.layer,
+        )
+        return self
 
 class Outline:
     """The shape and dimensions of the board"""
@@ -779,7 +877,7 @@ class Outline:
         self.hole_diameter = hole_diameter
     
     def draw_svg(self, drawing: svg.Drawing, parent: svg.base.BaseElement, color=None, thickness=None, dashes=None):
-        """Draw this Link on the given SVG drawing
+        """Draw this Outline on the given SVG drawing
         
         This method returns self and can therefore be chained."""
 
@@ -801,6 +899,22 @@ class Outline:
             fill = "none",
             label = f"Outline_hole",
         ))
+        return self
+    
+    def draw_kicad(self, kicadpcb: KicadPCB, width: float) -> Self:
+        """Draw this Outline on the given Kicad board"""
+        kicadpcb.gr_circle(
+            center = self.board_center,
+            radius = self.board_diameter / 2.0,
+            width = width,
+            layer = 'outline',
+        )
+        kicadpcb.gr_circle(
+            center = self.board_center,
+            radius = self.hole_diameter / 2.0,
+            width = width,
+            layer = 'outline',
+        )
         return self
 
 class PCB:
@@ -855,39 +969,29 @@ class PCB:
         # Construction geometry
         construction_geometry = [
             # Base coil center line
-            svg.shapes.Line(
-                board_center.to_viewport().as_tuple(), Point(0, config.board_radius).to_viewport().as_tuple(),
-                stroke = config.construction_geometry_color,
-                stroke_width = config.construction_geometry_thickness,
-                stroke_dasharray=config.construction_geometry_dashes,
+            Segment(
+                p1 = board_center,
+                p2 = Point(0, config.board_radius),
             ),
             # Base coil left line
-            svg.shapes.Line(
-                board_center.to_viewport().as_tuple(), Point.polar(-config.coil_angle/2.0, config.board_radius).to_viewport().as_tuple(),
-                stroke = config.construction_geometry_color,
-                stroke_width = config.construction_geometry_thickness,
-                stroke_dasharray = config.construction_geometry_dashes,
+            Segment(
+                p1 = board_center,
+                p2 = Point.polar(-config.coil_angle/2.0, config.board_radius),
             ),
             # Base coil right line
-            svg.shapes.Line(
-                board_center.to_viewport().as_tuple(), Point.polar(config.coil_angle/2.0, config.board_radius).to_viewport().as_tuple(),
-                stroke = config.construction_geometry_color,
-                stroke_width = config.construction_geometry_thickness,
-                stroke_dasharray = config.construction_geometry_dashes,
+            Segment(
+                p1 = board_center,
+                p2 = Point.polar(config.coil_angle/2.0, config.board_radius),
             ),
             # Outer circle
-            svg.shapes.Circle(
-                board_center.to_viewport().as_tuple(), config.board_radius - config.board_outer_margin,
-                stroke = config.construction_geometry_color,
-                stroke_width = config.construction_geometry_thickness,
-                stroke_dasharray = config.construction_geometry_dashes,
+            Circle(
+                center = board_center,
+                radius = config.board_radius - config.board_outer_margin,
             ),
             # Inner circle
-            svg.shapes.Circle(
-                board_center.to_viewport().as_tuple(), config.hole_radius + config.board_inner_margin,
-                stroke = config.construction_geometry_color,
-                stroke_width = config.construction_geometry_thickness,
-                stroke_dasharray = config.construction_geometry_dashes,
+            Circle(
+                center = board_center,
+                radius = config.hole_radius + config.board_inner_margin,
             ),
         ]
 
@@ -963,7 +1067,7 @@ class PCB:
                 ]
                 optimise_outer_vias = False
                 optimise_inner_vias = False
-        for i, layer_id in enumerate(config.layers):
+        for i, layer_id in enumerate(config.copper_layers):
             layers_specs[layer_id] = {
                 'anticlockwise': i % 2 == 1,
                 'outside_connection': outside_connections[int((i + 1) / 2)],
@@ -1153,21 +1257,29 @@ class PCB:
             for i in range(n_terminals):
                 terminal = terminal_base.rotated(board_center, 360.0 * i / config.n_coils)
                 terminal.label = f"Terminal_{coil_names[i]}"
+                pad_name = coil_names[i]
+                if config.link_series_coils and config.link_com:
+                    # Only keep the letter, not the number
+                    pad_name = pad_name[0]
+                terminal.pad_name = pad_name
                 terminals.append(terminal)
             if config.link_series_coils:
                 if config.link_com:
                     terminal = terminal_base.rotated(board_center, - 360.0 / config.n_coils)
                     terminal.label = f"Terminal_COM"
+                    terminal.pad_name = f"COM"
                     terminals.append(terminal)
                 else:
                     for i in range(config.n_phases):
                         terminal = terminal_base.rotated(board_center, 360.0 * -(i + 1) / config.n_coils)
-                        terminal.label = f"Terminal_{coil_names[-(i+1)]}"
+                        terminal.label = f"Terminal_{coil_names[-(i + 1)]}"
+                        pad_name = coil_names[-(i + 1)]
+                        terminal.pad_name = pad_name
                         terminals.append(terminal)
 
         # Generate the coils on all layers
         coil_outside_connection_length = config.trace_width * 2
-        for layer_id in config.layers:
+        for layer_id in config.copper_layers:
             specs = layers_specs[layer_id]
 
             # Generate the base Coil for this layer
@@ -1238,7 +1350,7 @@ class PCB:
             if config.n_layers >= config.n_phases:
                 # Base path for inner connections (even coils)
                 # Draw a path offset toward the inner side of the board that connects these two points for the first coil
-                connection_point_1 = coils[config.layers[-1]][0].path.start_point
+                connection_point_1 = coils[config.copper_layers[-1]][0].path.start_point
                 connection_point_2 = connection_point_1
                 if not optimise_inner_vias:
                     connection_point_2 = connection_point_2.mirrored_y()
@@ -1262,7 +1374,7 @@ class PCB:
                 # Base path for outer connections (odd coils)
                 # Draw a path offset toward the outer side of the board that connects these two points for the first coil
                 if config.n_slots_per_phase >= 4:
-                    connection_point_1 = coils[config.layers[0]][0].path.start_point
+                    connection_point_1 = coils[config.copper_layers[0]][0].path.start_point
                     connection_point_2 = connection_point_1.mirrored_y().rotated(board_center, config.coil_angle * config.n_phases)
                     outer_vias_radius = config.board_radius - config.board_outer_margin + config.outer_vias_offset + config.trace_spacing + config.series_link_outer_trace_width / 2.0
                     vias_circle_radius = config.board_radius - config.board_outer_margin + max(config.via_diameter / 2.0, config.series_link_outer_trace_width / 2.0) + config.trace_spacing
@@ -1288,11 +1400,11 @@ class PCB:
                         label = f"Link_{coil_names[slot_pair * config.n_phases + phase]}_{coil_names[(slot_pair + 1) * config.n_phases + phase]}"
                         if slot_pair % 2 == 0:
                             path = base_path_inner.rotated(board_center, angle)
-                            link = Link(path, config.series_link_inner_trace_width, config.layers[phase], label=label)
+                            link = Link(path, config.series_link_inner_trace_width, config.copper_layers[phase], label=label)
                             links.append(link)
                         else:
                             path = base_path_outer.rotated(board_center, angle)
-                            link = Link(path, config.series_link_outer_trace_width, config.layers[phase], label=label)
+                            link = Link(path, config.series_link_outer_trace_width, config.copper_layers[phase], label=label)
                             links.append(link)
                             via1_label = f"Link_via_{coil_names[slot_pair * config.n_phases + phase]}"
                             via1 = Via(via_pos_1, config.via_diameter, config.via_hole_diameter, label=via1_label).rotated(board_center, angle)
@@ -1306,7 +1418,7 @@ class PCB:
         # Connect the common point in a wye (star) configuration, on the top layer
         link_com_connection_point = None
         if config.link_com:
-            layer_id = config.layers[0]
+            layer_id = config.copper_layers[0]
             connection_point_1 = coils[layer_id][0].path.start_point
             connection_point_2 = connection_point_1.rotated(board_center, -config.coil_angle)
             terminal_circle_radius = board_center.distance(terminal_base.center) if terminal_base is not None else 0
@@ -1340,7 +1452,7 @@ class PCB:
             link_com_connection_point = intermediate_point_1
 
         # Connect the terminals and linking vias on the first layer
-        layer_id = config.layers[0]
+        layer_id = config.copper_layers[0]
         if config.draw_only_layers is None or layer_id in config.draw_only_layers:
             for i in range(config.n_coils):
                 if terminal_base and (i < config.n_phases or (not config.link_com and i >= config.n_coils - config.n_phases) or (i == config.n_coils - 1) or not config.link_series_coils):
@@ -1358,9 +1470,10 @@ class PCB:
                 top_silk.append(SilkscreenText(
                     text = coil_names[i],
                     position = Point.polar(angle, config.coil_names_position_radius),
-                    size = config.coil_names_font_size,
+                    size = config.coil_names_font_size * config.svg_font_size_factor,
                     rotation = angle,
-                    font_family = config.coil_names_font_family,
+                    layer = 'top_silk',
+                    font_family = config.silk_font_family,
                     label = f"Coil_name_{coil_names[i]}",
                 ))
 
@@ -1386,19 +1499,19 @@ class PCB:
         # Create the SVG layers to organize the drawing.
         # Layer groups created later will be displayed on top of the previous ones, so the board layers are reversed
         # to have the top layer on top and bottom layer on the bottom, as expected.
-        svg_layers_ids = ['bottom_silk'] + list(reversed(self.config.layers)) + ['top_silk', 'outline', 'vias', 'terminals', 'magnets', 'construction']
+        svg_layers_ids = ['bottom_silk'] + list(reversed(self.config.copper_layers)) + ['top_silk', 'outline', 'vias', 'terminals', 'magnets', 'construction']
         svg_layers = {}
         for layer_id in svg_layers_ids:
             svg_layers[layer_id] = drawing.layer(label=layer_id.capitalize())
 
         # Draw the coils
-        for layer_id in self.config.layers:
+        for layer_id in self.config.copper_layers:
             if self.config.draw_only_layers is None or layer_id in self.config.draw_only_layers:
                 for object in self.coils[layer_id]:
                     object.draw_svg(
                         drawing = drawing,
                         parent = svg_layers[layer_id],
-                        color = self.config.layers_color.get(layer_id),
+                        color = self.config.copper_layers_color.get(layer_id),
                         thickness = self.config.trace_width,
                         dashes = "none",
                     )
@@ -1409,8 +1522,7 @@ class PCB:
                 link.draw_svg(
                     drawing = drawing,
                     parent = svg_layers[link.layer],
-                    color = self.config.layers_color.get(link.layer),
-                    thickness = link.trace_width,
+                    color = self.config.copper_layers_color.get(link.layer),
                     dashes = "none",
                 )
 
@@ -1440,6 +1552,9 @@ class PCB:
                     parent = svg_layers['terminals'],
                     pad_color = self.config.terminal_color,
                     hole_color = self.config.terminal_hole_color,
+                    ref_font_family = self.config.silk_font_family,
+                    ref_color = self.config.top_silk_color,
+                    ref_font_size_factor = self.config.svg_font_size_factor,
                     opacity = self.config.terminal_opacity,
                     clip_path_id = clip_path_id,
                 )
@@ -1476,7 +1591,13 @@ class PCB:
                         svg_layers['construction'].add(object)
                     
                     case DrawableObject():
-                        object.draw_svg(drawing, svg_layers['construction'])
+                        object.draw_svg(
+                            drawing = drawing,
+                            parent = svg_layers['construction'],
+                            color = self.config.construction_geometry_color,
+                            thickness = self.config.construction_geometry_thickness,
+                            dashes = self.config.construction_geometry_dashes,
+                        )
 
         # Draw the magnets
         if self.config.draw_magnets:
@@ -1497,3 +1618,65 @@ class PCB:
             drawing.add(svg_layers[layer_id])
 
         return self
+    
+    def draw_kicad(self, kicadpcb: KicadPCB) -> Self:
+        """Draw this PCB on the given Kicad board"""
+
+        # Draw the coils
+        for layer_id in self.config.copper_layers:
+            if self.config.draw_only_layers is None or layer_id in self.config.draw_only_layers:
+                for object in self.coils[layer_id]:
+                    object.draw_kicad(
+                        kicadpcb = kicadpcb,
+                        width = self.config.trace_width,
+                        layer = layer_id,
+                    )
+
+        # Draw the link traces
+        for link in self.links:
+            if self.config.draw_only_layers is None or link.layer in self.config.draw_only_layers:
+                link.draw_kicad(kicadpcb)
+
+        # Draw the vias
+        if self.config.draw_vias:
+            for via in self.vias:
+                via.draw_kicad(kicadpcb)
+
+        # Draw the terminals
+        if self.config.draw_terminals:
+            for terminal in self.terminals:
+                terminal.draw_kicad(kicadpcb)
+        
+        # Draw the top and bottom silkscreens
+        for item in self.top_silk:
+            item.draw_kicad(kicadpcb)
+        for item in self.bottom_silk:
+            item.draw_kicad(kicadpcb)
+
+        # Draw the outline
+        if self.config.draw_outline:
+            self.outline.draw_kicad(
+                kicadpcb = kicadpcb,
+                width = self.config.trace_width,
+            )
+
+        # Draw the construction geometry
+        if self.config.draw_construction_geometry:
+            for object in self.construction_geometry:
+                object.draw_kicad(
+                    kicadpcb = kicadpcb,
+                    width = self.config.construction_geometry_thickness,
+                    layer = 'construction',
+                    stroke_type = 'dash_dot',
+                )
+
+        # Draw the magnets
+        if self.config.draw_magnets:
+            for i in range(self.config.n_magnets):
+                center = Point.polar(360.0 * i / self.config.n_magnets, self.config.magnets_position_radius)
+                kicadpcb.gr_circle(
+                    center = center,
+                    radius = self.config.magnets_diameter / 2.0,
+                    width = self.config.magnets_thickness,
+                    layer = 'magnets',
+                )

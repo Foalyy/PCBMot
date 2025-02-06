@@ -13,6 +13,7 @@ class Config:
         self,
         board_diameter: float,
         hole_diameter: float,
+        board_thickness: float,
         board_outer_margin: float,
         board_inner_margin: float,
         n_phases: int,
@@ -51,6 +52,7 @@ class Config:
         draw_magnets: bool,
         draw_coil_names: bool,
         svg_profile: str,
+        svg_scale: int,
     ):
         # Check parameters
         if board_diameter <= 0:
@@ -69,6 +71,7 @@ class Config:
         # Save parameters
         self.board_diameter: float = board_diameter
         self.hole_diameter: float = hole_diameter
+        self.board_thickness: float = board_thickness
         self.board_outer_margin: float = board_outer_margin
         self.board_inner_margin: float = board_inner_margin
         self.n_phases: int = n_phases
@@ -106,7 +109,8 @@ class Config:
         self.draw_only_layers: list[str] = draw_only_layers
         self.draw_magnets: bool = draw_magnets
         self.draw_coil_names: bool = draw_coil_names
-        self.svg_profile = svg_profile
+        self.svg_profile: str = svg_profile
+        self.svg_scale: int = svg_scale
 
         # Computed parameters
         self.viewport_width: float = self.board_diameter * 1.1
@@ -121,19 +125,19 @@ class Config:
             self.coil_angle: float = 360.0 / self.n_coils
         match n_layers:
             case 2:
-                self.layers = ['top', 'bottom']
+                self.copper_layers = ['top', 'bottom']
             case 4:
-                self.layers = ['top', 'in1', 'in2', 'bottom']
+                self.copper_layers = ['top', 'in1', 'in2', 'bottom']
             case 6:
-                self.layers = ['top', 'in1', 'in2', 'in3', 'in4', 'bottom']
+                self.copper_layers = ['top', 'in1', 'in2', 'in3', 'in4', 'bottom']
             case 8:
-                self.layers = ['top', 'in1', 'in2', 'in3', 'in4', 'in5', 'in6', 'bottom']
+                self.copper_layers = ['top', 'in1', 'in2', 'in3', 'in4', 'in5', 'in6', 'bottom']
             case _:
                 raise ValueError("The number of layers must be 2, 4, 6 or 8")
         coil_names_position_radius = ((self.board_radius - self.board_outer_margin) + (self.hole_radius + self.board_inner_margin)) / 2.0
         if coil_names_font_size is None:
-            suggested_size_by_width = (2 * math.pi * coil_names_position_radius / self.n_coils) / 2.0
-            suggested_size_by_height = ((self.board_radius - self.board_outer_margin) - (self.hole_radius + self.board_inner_margin)) / 5.0
+            suggested_size_by_width = (2 * math.pi * coil_names_position_radius / self.n_coils) / 6.0
+            suggested_size_by_height = ((self.board_radius - self.board_outer_margin) - (self.hole_radius + self.board_inner_margin)) / 10.0
             self.coil_names_font_size = round(min(suggested_size_by_width, suggested_size_by_height), 1)
         if coil_names_offset is None:
             self.coil_names_offset = self.via_diameter * 4
@@ -152,11 +156,12 @@ class Config:
         # SVG style
         self.background_color = "#001023"
         self.construction_geometry_color: str = "#848484"
-        self.construction_geometry_thickness: float = board_diameter / 1000.
-        self.construction_geometry_dashes: str = "0.2 0.12"
+        self.construction_geometry_thickness: float = board_diameter / 500.
+        t = self.construction_geometry_thickness
+        self.construction_geometry_dashes: str = f"{t * 4} {t * 2} {t} {t * 2}"
         self.outline_color = "#D0D2CD"
-        self.outline_thickness = 0.1
-        self.layers_color = {
+        self.outline_thickness = board_diameter / 300
+        self.copper_layers_color = {
             'top': "#C83434",
             'bottom': "#4D7FC4",
             'in1': "#7FC87F",
@@ -168,7 +173,7 @@ class Config:
         }
         self.top_silk_color = "#EEEFA4"
         self.bottom_silk_color = "#E6B2A4"
-        self.coil_names_font_family = "Arial, sans-serif"
+        self.silk_font_family = "Arial, sans-serif"
         self.via_color = "#ECECEC"
         self.via_hole_color = "#E3B72E"
         self.via_opacity = 1.0
@@ -176,6 +181,7 @@ class Config:
         self.terminal_hole_color = self.background_color
         self.terminal_opacity = 1.0
         self.magnets_color = "#F0F0F0"
-        self.magnets_thickness = 0.1
+        self.magnets_thickness = board_diameter / 200
         self.magnets_opacity = 1.0
         self.magnets_dashes = "none"
+        self.svg_font_size_factor = 1.5

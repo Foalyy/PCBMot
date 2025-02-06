@@ -2,17 +2,20 @@ from typing import Self
 from inkscape_drawing import InkscapeDrawing
 from config import Config, TerminalType
 from pcb import PCB
+from kicad import KicadPCB
 
 
 # Config
+KICADPCB_FILENAME = 'example.kicad_pcb'
 SVG_FILENAME = 'example.svg'
 config = Config(
-    board_diameter = 90, # mm
-    hole_diameter = 55, # mm
+    board_diameter = 80, # mm
+    hole_diameter = 45, # mm
+    board_thickness = 1.0, #mm
     board_outer_margin = 1.8, # mm
     board_inner_margin = 1.0, # mm
     n_phases = 3,
-    n_slots_per_phase = 10,
+    n_slots_per_phase = 8,
     coil_angle = None,
     n_layers = 8,
     four_layers_inside_vias = False,
@@ -46,23 +49,25 @@ config = Config(
     draw_only_layers = None,
     draw_magnets = True,
     draw_coil_names = True,
-    svg_profile = 'tiny'
+    svg_profile = 'tiny',
+    svg_scale = 100, # px/mm
 )
 
-# Create the PCB
+# Generate the PCB based on the given config
 pcb = PCB.generate(config)
 
 # Create the SVG drawing
 dwg = InkscapeDrawing(
     SVG_FILENAME,
-    size = ("1000px", "1000px"),
+    size = (f"{int(config.viewport_width * config.svg_scale)}px", f"{int(config.viewport_height * config.svg_scale)}px"),
     coords = (-config.viewport_width/2.0, -config.viewport_height/2.0, config.viewport_width, config.viewport_height),
     profile = config.svg_profile,
     background_color = config.background_color,
 )
-
-# Draw the PCB
 pcb.draw_svg(dwg)
-
-# Save the final SVG file
 dwg.save()
+
+# Create the Kicad board
+kicadpcb = KicadPCB(KICADPCB_FILENAME, config)
+pcb.draw_kicad(kicadpcb)
+kicadpcb.save()

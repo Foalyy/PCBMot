@@ -16,6 +16,7 @@ class InkscapeDrawing(svg.Drawing):
     # SVG objects that will customized to support Inkscape properties
     object_types = {
         'g': svg.container.Group,
+        'line': svg.shapes.Line,
         'rect': svg.shapes.Rect,
         'circle': svg.shapes.Circle,
         'path': svg.path.Path,
