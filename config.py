@@ -1,5 +1,6 @@
 from enum import Enum
-import math
+from typing import Self
+import math, json
 
 class BoardShape(Enum):
     CIRCLE = 1
@@ -13,6 +14,356 @@ class TerminalType(Enum):
 
 ## Board config
 class Config:
+    options = [
+        # Board
+        {
+            'name': 'board_shape',
+            'json': 'board.board_shape',
+            'type': BoardShape,
+            'handler': lambda s : {
+                'circle': BoardShape.CIRCLE,
+                'square': BoardShape.SQUARE,
+            }[s],
+            'enum': ['circle', 'square'],
+            'default': 'circle',
+        },
+        {
+            'name': 'board_diameter',
+            'json': 'board.board_diameter',
+            'type': float,
+            'required': True,
+        },
+        {
+            'name': 'hole_diameter',
+            'json': 'board.hole_diameter',
+            'type': float,
+            'required': True,
+        },
+        {
+            'name': 'board_chamfer',
+            'json': 'board.board_chamfer',
+            'type': float,
+            'nullable': True,
+            'default': None,
+        },
+        {
+            'name': 'board_fillet',
+            'json': 'board.board_fillet',
+            'type': float,
+            'nullable': True,
+            'default': None,
+        },
+        {
+            'name': 'board_thickness',
+            'json': 'board.board_thickness',
+            'type': float,
+            'required': True,
+        },
+        {
+            'name': 'n_layers',
+            'json': 'board.n_layers',
+            'type': int,
+            'enum': [2, 4, 6, 8],
+            'required': True,
+        },
+        {
+            'name': 'board_outer_margin',
+            'json': 'board.board_outer_margin',
+            'type': float,
+            'nullable': True,
+            'default': None,
+        },
+        {
+            'name': 'board_inner_margin',
+            'json': 'board.board_inner_margin',
+            'type': float,
+            'nullable': True,
+            'default': None,
+        },
+        {
+            'name': 'rotation',
+            'json': 'board.rotation',
+            'type': float,
+            'default': 0.0,
+        },
+
+        # Board / mountpoints
+        {
+            'name': 'n_mountpoints',
+            'json': 'board.mountpoints.n_mountpoints',
+            'type': int,
+            'default': 0,
+        },
+        {
+            'name': 'mountpoints_position_radius',
+            'json': 'board.mountpoints.mountpoints_position_radius',
+            'type': float,
+            'default': 0.0,
+        },
+        {
+            'name': 'mountpoints_diameter',
+            'json': 'board.mountpoints.mountpoints_diameter',
+            'type': float,
+            'default': 0.0,
+        },
+        {
+            'name': 'mountpoints_marking_diameter',
+            'json': 'board.mountpoints.mountpoints_marking_diameter',
+            'type': float,
+            'default': 0.0,
+        },
+
+        # Coils
+        {
+            'name': 'trace_width',
+            'json': 'coils.trace_width',
+            'type': float,
+            'required': True,
+        },
+        {
+            'name': 'trace_spacing',
+            'json': 'coils.trace_spacing',
+            'type': float,
+            'required': True,
+        },
+        {
+            'name': 'n_phases',
+            'json': 'coils.n_phases',
+            'type': int,
+            'required': True,
+        },
+        {
+            'name': 'n_slots_per_phase',
+            'json': 'coils.n_slots_per_phase',
+            'type': int,
+            'required': True,
+        },
+        {
+            'name': 'coil_angle',
+            'json': 'coils.coil_angle',
+            'type': float,
+            'nullable': True,
+            'default': None,
+        },
+        {
+            'name': 'four_layers_inner_vias',
+            'json': 'coils.four_layers_inner_vias',
+            'type': bool,
+            'default': False,
+        },
+        {
+            'name': 'max_turns_per_layer',
+            'json': 'coils.max_turns_per_layer',
+            'type': int,
+            'nullable': True,
+            'default': None,
+        },
+
+        # Coils / series link
+        {
+            'name': 'link_series_coils',
+            'json': 'coils.series_link.link_series_coils',
+            'type': bool,
+            'default': True,
+        },
+        {
+            'name': 'series_link_inner_trace_width',
+            'json': 'coils.series_link.series_link_inner_trace_width',
+            'type': float,
+            'nullable': True,
+            'default': None,
+        },
+        {
+            'name': 'series_link_outer_trace_width',
+            'json': 'coils.series_link.series_link_outer_trace_width',
+            'type': float,
+            'nullable': True,
+            'default': None,
+        },
+        {
+            'name': 'series_link_inner_offset',
+            'json': 'coils.series_link.series_link_inner_offset',
+            'type': float,
+            'default': 0.0,
+        },
+        {
+            'name': 'series_link_outer_offset',
+            'json': 'coils.series_link.series_link_outer_offset',
+            'type': float,
+            'default': 0.0,
+        },
+        {
+            'name': 'coil_names_font_size',
+            'json': 'coils.coil_names_font_size',
+            'type': float,
+            'nullable': True,
+            'default': None,
+        },
+        {
+            'name': 'coil_names_offset',
+            'json': 'coils.coil_names_offset',
+            'type': float,
+            'nullable': True,
+            'default': None,
+        },
+
+        # Coils / COM link
+        {
+            'name': 'link_com',
+            'json': 'coils.com_link.link_com',
+            'type': bool,
+            'default': True,
+        },
+        {
+            'name': 'com_link_trace_width',
+            'json': 'coils.com_link.com_link_trace_width',
+            'type': float,
+            'nullable': True,
+            'default': None,
+        },
+        {
+            'name': 'com_link_offset',
+            'json': 'coils.com_link.com_link_offset',
+            'type': float,
+            'default': 0.0,
+        },
+
+        # Vias
+        {
+            'name': 'via_diameter',
+            'json': 'vias.via_diameter',
+            'type': float,
+            'required': True,
+        },
+        {
+            'name': 'via_drill_diameter',
+            'json': 'vias.via_drill_diameter',
+            'type': float,
+            'required': True,
+        },
+        {
+            'name': 'outer_vias_offset',
+            'json': 'vias.outer_vias_offset',
+            'type': float,
+            'default': 0.0,
+        },
+        {
+            'name': 'inner_vias_offset',
+            'json': 'vias.inner_vias_offset',
+            'type': float,
+            'default': 0.0,
+        },
+
+        # Terminals
+        {
+            'name': 'terminal_type',
+            'json': 'terminals.terminal_type',
+            'type': TerminalType,
+            'handler': lambda s : {
+                'none': TerminalType.NONE,
+                'through_hole': TerminalType.THROUGH_HOLE,
+                'smd': TerminalType.SMD,
+                'castellated': TerminalType.CASTELLATED,
+            }[s],
+            'enum': ['none', 'through_hole', 'smd', 'castellated'],
+            'default': 'through_hole',
+        },
+        {
+            'name': 'terminal_diameter',
+            'json': 'terminals.terminal_diameter',
+            'type': float,
+            'default': 1.6,
+        },
+        {
+            'name': 'terminal_hole_diameter',
+            'json': 'terminals.terminal_hole_diameter',
+            'type': float,
+            'default': 0.8,
+        },
+        {
+            'name': 'terminal_offset',
+            'json': 'terminals.terminal_offset',
+            'type': float,
+            'default': 0.0,
+        },
+
+        # Magnets
+        {
+            'name': 'magnets_diameter',
+            'json': 'magnets.magnets_diameter',
+            'type': float,
+            'nullable': True,
+            'default': None,
+        },
+        {
+            'name': 'magnets_position_radius',
+            'json': 'magnets.magnets_position_radius',
+            'type': float,
+            'nullable': True,
+            'default': None,
+        },
+
+        # Display
+        {
+            'name': 'draw_vias',
+            'json': 'display.draw_vias',
+            'type': bool,
+            'default': True,
+        },
+        {
+            'name': 'draw_terminals',
+            'json': 'display.draw_terminals',
+            'type': bool,
+            'default': True,
+        },
+        {
+            'name': 'draw_outline',
+            'json': 'display.draw_outline',
+            'type': bool,
+            'default': True,
+        },
+        {
+            'name': 'draw_construction_geometry',
+            'json': 'display.draw_construction_geometry',
+            'type': bool,
+            'default': True,
+        },
+        {
+            'name': 'draw_only_layers',
+            'json': 'display.draw_only_layers',
+            'type': list,
+            'nullable': True,
+            'default': None,
+        },
+        {
+            'name': 'draw_coil_names',
+            'json': 'display.draw_coil_names',
+            'type': bool,
+            'default': True,
+        },
+        {
+            'name': 'draw_magnets',
+            'json': 'display.draw_magnets',
+            'type': bool,
+            'default': True,
+        },
+
+        # SVG
+        {
+            'name': 'svg_profile',
+            'json': 'svg.svg_profile',
+            'type': str,
+            'enum': ['tiny', 'full'],
+            'default': 'tiny',
+        },
+        {
+            'name': 'svg_scale',
+            'json': 'svg.svg_scale',
+            'type': float,
+            'default': 100,
+        },
+    ]
+
     def __init__(
         self,
         board_shape: BoardShape,
@@ -28,7 +379,7 @@ class Config:
         board_outer_margin: float,
         board_inner_margin: float,
         n_phases: int,
-        four_layers_inside_vias: bool,
+        four_layers_inner_vias: bool,
         n_slots_per_phase: int,
         coil_angle: float,
         n_layers: int,
@@ -36,7 +387,7 @@ class Config:
         trace_width: float,
         trace_spacing: float,
         via_diameter: float,
-        via_hole_diameter: float,
+        via_drill_diameter: float,
         outer_vias_offset: float,
         inner_vias_offset: float,
         terminal_type: TerminalType,
@@ -71,7 +422,7 @@ class Config:
             raise ValueError("The board diameter must be positive")
         if hole_diameter <= 0:
             raise ValueError("The hole diameter must be positive")
-        if hole_diameter + board_inner_margin >= board_diameter - board_outer_margin:
+        if hole_diameter >= board_diameter:
             raise ValueError("The board diameter is smaller than the hole diameter")
         if not (n_slots_per_phase >= 1 and (n_slots_per_phase == 1 or n_slots_per_phase % 2 == 0)):
             raise ValueError("The number of slots per phase must be 1 or an even number")
@@ -79,8 +430,19 @@ class Config:
             raise ValueError("Unable to generate the connections between the coils because the number of layers should be greater than or equal to the number of phases, either increase the number of layers or disable link_series_coils")
         if terminal_type not in [TerminalType.NONE, TerminalType.THROUGH_HOLE, TerminalType.SMD, TerminalType.CASTELLATED]:
             raise ValueError("Invalid terminal type")
-        
-        # Save parameters
+        if terminal_type != TerminalType.NONE and terminal_diameter <= 0:
+            raise ValueError("Please provide a pad diameter for the terminals")
+        if terminal_type != TerminalType.NONE and terminal_hole_diameter <= 0:
+            raise ValueError("Please provide a hole diameter for the terminals")
+        if terminal_type == TerminalType.CASTELLATED and board_shape != BoardShape.CIRCLE:
+            raise ValueError("Castellated terminals are only possible for circle boards")
+        if n_mountpoints > 0 and mountpoints_position_radius <= 0:
+            raise ValueError("Please provide a position radius for the mountpoints")
+        if n_mountpoints > 0 and mountpoints_diameter <= 0:
+            raise ValueError("Please provide a diameter for the mountpoints")
+
+
+        # Save the parameters
         self.board_shape: BoardShape = board_shape
         self.board_diameter: float = board_diameter
         self.hole_diameter: float = hole_diameter
@@ -97,12 +459,12 @@ class Config:
         self.n_slots_per_phase: int = n_slots_per_phase
         self.coil_angle: float = coil_angle
         self.n_layers: int = n_layers
-        self.four_layers_inside_vias: bool = four_layers_inside_vias
+        self.four_layers_inner_vias: bool = four_layers_inner_vias
         self.max_turns_per_layer: int = max_turns_per_layer
         self.trace_width: float = trace_width
         self.trace_spacing: float = trace_spacing
         self.via_diameter: float = via_diameter
-        self.via_hole_diameter: float = via_hole_diameter
+        self.via_drill_diameter: float = via_drill_diameter
         self.outer_vias_offset: float = outer_vias_offset
         self.inner_vias_offset: float = inner_vias_offset
         self.terminal_type: TerminalType = terminal_type
@@ -154,6 +516,16 @@ class Config:
                 self.copper_layers = ['top', 'in1', 'in2', 'in3', 'in4', 'in5', 'in6', 'bottom']
             case _:
                 raise ValueError("The number of layers must be 2, 4, 6 or 8")
+        if self.series_link_inner_trace_width is None:
+            self.series_link_inner_trace_width = self.trace_width * 4
+        if self.series_link_outer_trace_width is None:
+            self.series_link_outer_trace_width = self.series_link_inner_trace_width
+        if self.com_link_trace_width is None:
+            self.com_link_trace_width = self.series_link_outer_trace_width
+        if self.board_outer_margin is None:
+            self.board_outer_margin = self.terminal_diameter + self.terminal_offset + self.trace_spacing * 2
+        if self.board_inner_margin is None:
+            self.board_inner_margin = self.inner_vias_offset + self.series_link_inner_trace_width + self.trace_spacing * 2
         coil_names_position_radius = ((self.board_radius - self.board_outer_margin) + (self.hole_radius + self.board_inner_margin)) / 2.0
         if coil_names_font_size is None:
             suggested_size_by_width = (2 * math.pi * coil_names_position_radius / self.n_coils) / 6.0
@@ -208,3 +580,52 @@ class Config:
         self.magnets_opacity = 1.0
         self.magnets_dashes = "none"
         self.svg_font_size_factor = 1.5
+    
+    def read(filename: str) -> Self:
+        """Read and parse the given file as JSON, and return a Config"""
+        with open(filename, 'r') as f:
+            cfg = json.load(f)
+        return Config.parse(cfg)
+    
+    def parse(cfg: dict) -> Self:
+        """Parse the given dict and return it as a Config"""
+        args = {}
+        for option in Config.options:
+            value = cfg
+            for item in option['json'].split('.'):
+                try:
+                    value = value[item]
+                except KeyError:
+                    if option.get('required', False):
+                        raise ValueError(f"Config option '{option['json']}' is required (type : {option['type'].__name__})")
+                    else:
+                        try:
+                            value = option['default']
+                            break
+                        except KeyError:
+                            raise ValueError(f"Config option '{option['json']}' is not required but doesn't have a default value")
+            if not option.get('nullable', False) and value is None:
+                raise ValueError(f"Invalid value 'null' for config option '{option['json']}' (type : {option['type'].__name__})")
+            if 'enum' in option and value not in option['enum']:
+                available_values_str = f", valid values are : {', '.join(map(lambda x: f"'{x}'", option['enum']))}"
+                raise ValueError(f"Invalid value '{value}' for config option '{option['json']}' (type : {option['type'].__name__}){available_values_str}")
+            if 'handler' in option:
+                try:
+                    value = option['handler'](value)
+                except KeyError:
+                    available_values_str = ''
+                    if 'enum' in option:
+                        available_values_str = f", valid values are : {', '.join(map(lambda x: f"'{x}'", option['enum']))}"
+                    raise ValueError(f"Invalid value '{value}' for config option '{option['json']}' (type : {option['type'].__name__}){available_values_str}")
+            if value is not None:
+                try:
+                    if option['type'] is float:
+                        value = float(value)
+                    elif option['type'] is int:
+                        value = int(value)
+                    elif option['type'] is bool:
+                        value = bool(value)
+                except (ValueError, TypeError):
+                    raise ValueError(f"Invalid value '{value}' for config option '{option['json']}' (type : {option['type'].__name__})")
+            args[option['name']] = value
+        return Config(**args)

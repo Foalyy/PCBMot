@@ -941,13 +941,10 @@ class Outline:
         
         This method returns self and can therefore be chained."""
 
-        # Group the two circles together
-        group = drawing.g(label = "Outline")
-
         # Draw the outer edge
         match self.board_shape:
             case BoardShape.CIRCLE:
-                group.add(drawing.circle(
+                parent.add(drawing.circle(
                     self.board_center.to_viewport().as_tuple(),
                     self.board_diameter / 2.0,
                     stroke = color,
@@ -959,7 +956,7 @@ class Outline:
             case BoardShape.SQUARE:
                 self.path.draw_svg(
                     drawing,
-                    group,
+                    parent,
                     color = color,
                     opacity = 1.0,
                     thickness = thickness,
@@ -968,7 +965,7 @@ class Outline:
                 )
         
         # Draw the inner hole
-        group.add(drawing.circle(
+        parent.add(drawing.circle(
             self.board_center.to_viewport().as_tuple(),
             self.hole_diameter / 2.0,
             stroke = color,
@@ -982,7 +979,7 @@ class Outline:
         if self.n_mountpoints is not None:
             for i in range(self.n_mountpoints):
                 center = Point.polar((i + 0.5) * 360 / self.n_mountpoints, self.mountpoints_position_radius)
-                group.add(drawing.circle(
+                parent.add(drawing.circle(
                     center.to_viewport().as_tuple(),
                     self.mountpoints_diameter / 2.0,
                     stroke = color,
@@ -991,17 +988,15 @@ class Outline:
                     fill = "none",
                     label = f"Mountpoint_{i}",
                 ))
-                group.add(drawing.circle(
-                    center.to_viewport().as_tuple(),
-                    self.mountpoints_marking_diameter / 2.0,
-                    stroke = marking_color,
-                    stroke_width = marking_thickness,
-                    fill = "none",
-                    label = f"Mountpoint_marking_{i}",
-                ))
-
-        # Add the group to the parent
-        parent.add(group)
+                if self.mountpoints_marking_diameter > 0:
+                    parent.add(drawing.circle(
+                        center.to_viewport().as_tuple(),
+                        self.mountpoints_marking_diameter / 2.0,
+                        stroke = marking_color,
+                        stroke_width = marking_thickness,
+                        fill = "none",
+                        label = f"Mountpoint_marking_{i}",
+                    ))
         
         return self
     
@@ -1042,18 +1037,19 @@ class Outline:
                     width = width,
                     layer = 'outline',
                 )
-                kicadpcb.gr_circle(
-                    center = center,
-                    radius = self.mountpoints_marking_diameter / 2.0,
-                    width = marking_width,
-                    layer = 'top_silk',
-                )
-                kicadpcb.gr_circle(
-                    center = center,
-                    radius = self.mountpoints_marking_diameter / 2.0,
-                    width = marking_width,
-                    layer = 'bottom_silk',
-                )
+                if self.mountpoints_marking_diameter > 0:
+                    kicadpcb.gr_circle(
+                        center = center,
+                        radius = self.mountpoints_marking_diameter / 2.0,
+                        width = marking_width,
+                        layer = 'top_silk',
+                    )
+                    kicadpcb.gr_circle(
+                        center = center,
+                        radius = self.mountpoints_marking_diameter / 2.0,
+                        width = marking_width,
+                        layer = 'bottom_silk',
+                    )
 
         return self
 
@@ -1160,7 +1156,7 @@ class PCB:
                 # only traces on the outer side of the coils and maximize useful traces there, or place
                 # the vias along the middle line (using the "optimise" flags) to minimize the place taken
                 # by the vias. This choice is left to the user in the config.
-                if config.four_layers_inside_vias:
+                if config.four_layers_inner_vias:
                     outside_connections = [
                         CoilConnection.TERMINAL if config.terminal_type != TerminalType.NONE else None,
                         CoilConnection.OUTSIDE_INNER_LEFT_VIA,
@@ -1230,27 +1226,27 @@ class PCB:
         match config.n_layers:
             case 2:
                 # A single via placed in the middle
-                via = Via(coil_center, config.via_diameter, config.via_hole_diameter, tag=CoilConnection.INSIDE_OUTER_VIA)
+                via = Via(coil_center, config.via_diameter, config.via_drill_diameter, tag=CoilConnection.INSIDE_OUTER_VIA)
                 inside_vias_list = [via]
             case 4:
                 # Two vias placed vertically
-                inside_outer_via = Via(coil_center + Vector(0, config.via_diameter_w_spacing / 2.0), config.via_diameter, config.via_hole_diameter, tag=CoilConnection.INSIDE_OUTER_VIA)
-                inside_inner_via = Via(coil_center - Vector(0, config.via_diameter_w_spacing / 2.0), config.via_diameter, config.via_hole_diameter, tag=CoilConnection.INSIDE_INNER_VIA)
+                inside_outer_via = Via(coil_center + Vector(0, config.via_diameter_w_spacing / 2.0), config.via_diameter, config.via_drill_diameter, tag=CoilConnection.INSIDE_OUTER_VIA)
+                inside_inner_via = Via(coil_center - Vector(0, config.via_diameter_w_spacing / 2.0), config.via_diameter, config.via_drill_diameter, tag=CoilConnection.INSIDE_INNER_VIA)
                 inside_vias_list = [inside_outer_via, inside_inner_via]
                 pass
             case 6:
                 # Three vias, placed either vertically, or on a triangular shape
                 if tangential_length >= radial_length:
                     # The coil is wider than it is tall, place the via in a triangle
-                    inside_inner_via = Via(coil_center + Vector(0, -config.via_diameter_w_spacing / 2.0), config.via_diameter, config.via_hole_diameter, tag=CoilConnection.INSIDE_INNER_VIA)
-                    inside_outer_left_via = Via(inside_inner_via.center + Vector.polar(-30, config.via_diameter_w_spacing), config.via_diameter, config.via_hole_diameter, tag=CoilConnection.INSIDE_OUTER_VIA)
-                    inside_outer_right_via = Via(inside_inner_via.center + Vector.polar(30, config.via_diameter_w_spacing), config.via_diameter, config.via_hole_diameter, tag=CoilConnection.INSIDE_RIGHT_VIA)
+                    inside_inner_via = Via(coil_center + Vector(0, -config.via_diameter_w_spacing / 2.0), config.via_diameter, config.via_drill_diameter, tag=CoilConnection.INSIDE_INNER_VIA)
+                    inside_outer_left_via = Via(inside_inner_via.center + Vector.polar(-30, config.via_diameter_w_spacing), config.via_diameter, config.via_drill_diameter, tag=CoilConnection.INSIDE_OUTER_VIA)
+                    inside_outer_right_via = Via(inside_inner_via.center + Vector.polar(30, config.via_diameter_w_spacing), config.via_diameter, config.via_drill_diameter, tag=CoilConnection.INSIDE_RIGHT_VIA)
                     inside_vias_list = [inside_outer_left_via, inside_outer_right_via, inside_inner_via]
                 else:
                     # The coil is taller than it is wide, place the via vertically
-                    inside_outer_via = Via(coil_center + Vector(0, config.via_diameter_w_spacing), config.via_diameter, config.via_hole_diameter, tag=CoilConnection.INSIDE_OUTER_VIA)
-                    inside_middle_via = Via(coil_center, config.via_diameter, config.via_hole_diameter, tag=CoilConnection.INSIDE_RIGHT_VIA)
-                    inside_inner_via = Via(coil_center + Vector(0, -config.via_diameter_w_spacing), config.via_diameter, config.via_hole_diameter, tag=CoilConnection.INSIDE_INNER_VIA)
+                    inside_outer_via = Via(coil_center + Vector(0, config.via_diameter_w_spacing), config.via_diameter, config.via_drill_diameter, tag=CoilConnection.INSIDE_OUTER_VIA)
+                    inside_middle_via = Via(coil_center, config.via_diameter, config.via_drill_diameter, tag=CoilConnection.INSIDE_RIGHT_VIA)
+                    inside_inner_via = Via(coil_center + Vector(0, -config.via_diameter_w_spacing), config.via_diameter, config.via_drill_diameter, tag=CoilConnection.INSIDE_INNER_VIA)
                     inside_vias_list = [inside_outer_via, inside_middle_via, inside_inner_via]
             case 8:
                 # Four vias placed in an optimised diamond shape. If the coil is wider than tall (tangential length > radial length),
@@ -1266,8 +1262,8 @@ class PCB:
 
                         # Compute the shape of the diamond
                         sep_test = sep + step
-                        inside_outer_via = Via(coil_center + Vector(0, (config.via_diameter_w_spacing + sep_test) / 2.0), config.via_diameter, config.via_hole_diameter)
-                        inside_inner_via = Via(coil_center + Vector(0, -(config.via_diameter_w_spacing + sep_test) / 2.0), config.via_diameter, config.via_hole_diameter)
+                        inside_outer_via = Via(coil_center + Vector(0, (config.via_diameter_w_spacing + sep_test) / 2.0), config.via_diameter, config.via_drill_diameter)
+                        inside_inner_via = Via(coil_center + Vector(0, -(config.via_diameter_w_spacing + sep_test) / 2.0), config.via_diameter, config.via_drill_diameter)
                         c1 = Circle(inside_outer_via.center, config.via_diameter_w_spacing)
                         c2 = Circle(inside_inner_via.center, config.via_diameter_w_spacing)
                         points = c1.intersect(c2)
@@ -1287,13 +1283,13 @@ class PCB:
                             break
                         
                         # Make sure there is enough spacing between the horizontal vias
-                        inside_via_3 = Via(points[0], config.via_diameter, config.via_hole_diameter)
-                        inside_via_4 = Via(points[1], config.via_diameter, config.via_hole_diameter)
+                        inside_via_3 = Via(points[0], config.via_diameter, config.via_drill_diameter)
+                        inside_via_4 = Via(points[1], config.via_diameter, config.via_drill_diameter)
                         if inside_via_3.distance(inside_via_4) < config.trace_spacing:
                             break
                         sep = sep_test
-                inside_outer_via = Via(coil_center + Vector(0, (config.via_diameter_w_spacing + sep) / 2.0), config.via_diameter, config.via_hole_diameter, tag=CoilConnection.INSIDE_OUTER_VIA)
-                inside_inner_via = Via(coil_center - Vector(0, (config.via_diameter_w_spacing + sep) / 2.0), config.via_diameter, config.via_hole_diameter, tag=CoilConnection.INSIDE_INNER_VIA)
+                inside_outer_via = Via(coil_center + Vector(0, (config.via_diameter_w_spacing + sep) / 2.0), config.via_diameter, config.via_drill_diameter, tag=CoilConnection.INSIDE_OUTER_VIA)
+                inside_inner_via = Via(coil_center - Vector(0, (config.via_diameter_w_spacing + sep) / 2.0), config.via_diameter, config.via_drill_diameter, tag=CoilConnection.INSIDE_INNER_VIA)
                 c1 = Circle(inside_outer_via.center, config.via_diameter_w_spacing)
                 c2 = Circle(inside_inner_via.center, config.via_diameter_w_spacing)
                 points = c1.intersect(c2)
@@ -1301,8 +1297,8 @@ class PCB:
                     tag3, tag4 = CoilConnection.INSIDE_LEFT_VIA, CoilConnection.INSIDE_RIGHT_VIA
                 else:
                     tag3, tag4 = CoilConnection.INSIDE_RIGHT_VIA, CoilConnection.INSIDE_LEFT_VIA
-                inside_via_3 = Via(points[0], config.via_diameter, config.via_hole_diameter, tag=tag3)
-                inside_via_4 = Via(points[1], config.via_diameter, config.via_hole_diameter, tag=tag4)
+                inside_via_3 = Via(points[0], config.via_diameter, config.via_drill_diameter, tag=tag3)
+                inside_via_4 = Via(points[1], config.via_diameter, config.via_drill_diameter, tag=tag4)
                 inside_vias_list = [inside_outer_via, inside_inner_via, inside_via_3, inside_via_4]
         for via in inside_vias_list:
             inside_vias[via.tag] = via
@@ -1358,7 +1354,7 @@ class PCB:
         points = points_outer + points_inner
         for point, connection in points:
             if connection in outside_connections:
-                outside_vias[connection] = Via(point, config.via_diameter, config.via_hole_diameter, tag=connection)
+                outside_vias[connection] = Via(point, config.via_diameter, config.via_drill_diameter, tag=connection)
         if CoilConnection.OUTSIDE_INNER_LEFT_VIA in outside_vias \
                 and outside_vias[CoilConnection.OUTSIDE_INNER_LEFT_VIA].distance(outside_vias[CoilConnection.OUTSIDE_INNER_RIGHT_VIA]) < 0:
             print("Warning : collision between the vias closer to the center of the board")
@@ -1554,9 +1550,9 @@ class PCB:
                             link = Link(path, config.series_link_outer_trace_width, config.copper_layers[phase], label=label)
                             links.append(link)
                             via1_label = f"Link_via_{coil_names[slot_pair * config.n_phases + phase]}"
-                            via1 = Via(via_pos_1, config.via_diameter, config.via_hole_diameter, label=via1_label).rotated(board_center, angle)
+                            via1 = Via(via_pos_1, config.via_diameter, config.via_drill_diameter, label=via1_label).rotated(board_center, angle)
                             via2_label = f"Link_via_{coil_names[(slot_pair + 1) * config.n_phases + phase]}"
-                            via2 = Via(via_pos_2, config.via_diameter, config.via_hole_diameter, label=via2_label).rotated(board_center, angle)
+                            via2 = Via(via_pos_2, config.via_diameter, config.via_drill_diameter, label=via2_label).rotated(board_center, angle)
                             link_vias.extend([via1, via2])
             else:
                 print("Warning : unable to link the coils, not enough layers")
