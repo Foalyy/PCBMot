@@ -26,8 +26,8 @@ PRECISION = 10
 class SVGStyle:
     point_color: str = "#C02020"
     point_opacity: float = 0.7
-    point_radius: float = 0.15
-    point_width: float = 0.05
+    point_radius: float = 0.05
+    point_line_width: float = 0.02
 
     line_color: str = "#37C837"
     line_opacity: float = 0.7
@@ -282,15 +282,15 @@ class Point(Vector, DrawableObject):
         p = self.to_viewport()
         return f"{round(p.x, PRECISION)},{round(p.y, PRECISION)}"
     
-    def draw_svg(self, drawing: svg.Drawing, parent: svg.base.BaseElement, radius=None, color=None, opacity=None, width=None):
+    def draw_svg(self, drawing: svg.Drawing, parent: svg.base.BaseElement, radius=None, color=None, opacity=None, line_width=None, dashes=None):
         """Draw this Point on the given SVG drawing
         
         This method returns self and can therefore be chained."""
         parent.add(drawing.circle(self.to_viewport().as_tuple(),
             radius or style.point_radius,
-            stroke = color or style.point_color,
-            stroke_opacity = opacity or style.point_opacity,
-            stroke_width = width or style.point_width,
+            stroke = style.point_color,
+            stroke_opacity = style.point_opacity,
+            stroke_width = style.point_line_width,
         ))
         return self
 

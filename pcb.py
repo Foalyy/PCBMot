@@ -448,7 +448,7 @@ class Coil:
         # Twice the trace width is a sane value to start for any track width
         outer_fillet_radius = config.trace_width * 2
         if CoilConnection.OUTSIDE_OUTER_RIGHT_VIA in outside_vias or CoilConnection.OUTSIDE_OUTER_LEFT_VIA in outside_vias:
-            outer_fillet_radius, success = Coil._compute_fillet(
+            outer_fillet_radius, outer_arc_radius_offset, success = Coil._compute_fillet(
                 arc_radius = outer_radius,
                 opposite_radius = inner_radius,
                 angle = angle,
@@ -462,7 +462,7 @@ class Coil:
                 print("Warning : unable to compute a fillet for the outer side of the coil, check for collision with the via and try increasing outer_vias_offset")
 
         # Same calculation for the inner fillet radius
-        inner_fillet_radius, success = Coil._compute_fillet(
+        inner_fillet_radius, inner_arc_radius_offset, success = Coil._compute_fillet(
             arc_radius = inner_radius,
             opposite_radius = outer_radius,
             angle = angle,
@@ -476,18 +476,20 @@ class Coil:
             print("Warning : unable to compute a fillet for the inner side of the coil, check for collision with the via and try increasing inner_vias_offset")
 
         # Calculate the spiral of the coil
-        outer_radius_initial = outer_radius
-        inner_radius_initial = inner_radius
-        line_left = Line.from_two_points(board_center, Point.polar(-angle/2.0, outer_radius)).offset(loop_offset * 0.5 + outer_fillet_radius)
-        arc_outer = Arc(Point.polar(-angle/2.0, outer_radius), Point.polar(angle/2.0, outer_radius), outer_radius)
+        outer_radius_initial = outer_radius + outer_arc_radius_offset
+        inner_radius_initial = inner_radius + inner_arc_radius_offset
+        line_left = Line.from_two_points(board_center, Point.polar(-angle/2.0, outer_radius_initial)).offset(loop_offset * 0.5 + outer_fillet_radius)
+        arc_outer = Arc(Point.polar(-angle/2.0, outer_radius_initial), Point.polar(angle/2.0, outer_radius_initial), outer_radius_initial)
         point_start = line_left.intersect(arc_outer)
         path = Path(point_start)
         n_turns = 0
         collision_via = None
+        triangular = False
         for i in range(config.max_turns_per_layer + 1): # +1 because a part of the first and last turns will be removed later
             # Construction geometry
             line_left = Line.from_two_points(board_center, Point.polar(-angle/2.0, outer_radius)).offset(loop_offset * (i + 0.5))
             line_right = Line.from_two_points(board_center, Point.polar(angle/2.0, outer_radius)).offset(-loop_offset * (i + 0.5))
+            line_center = Line.from_two_points(board_center, Point.polar(0, outer_radius))
             arc_outer = Arc(Point.polar(-angle/2.0, outer_radius), Point.polar(angle/2.0, outer_radius), outer_radius)
             inner_radius = inner_radius_initial + i * loop_offset
             arc_inner = Arc(Point.polar(-angle/2.0, inner_radius), Point.polar(angle/2.0, inner_radius), inner_radius)
@@ -502,27 +504,47 @@ class Coil:
             if collision_via is not None:
                 break
 
-            # Segment to inner right
-            point_inner_right = line_right.intersect(arc_inner)
-            if point_inner_right.x < config.trace_width:
-                break
-            segment = Segment(path.end_point, point_inner_right)
-            closest_via, distance = Via.closest_in_list(inside_vias.values(), segment)
-            if distance < config.trace_width / 2.0 + config.trace_spacing: # Collision
-                collision_via = closest_via
-            path.append_segment(point_inner_right, fillet_radius=outer_fillet_radius, tag=CoilSide.RIGHT)
-            if collision_via is not None:
-                break
+            if triangular:
+                # Segment to inner point
+                point_inner = line_right.intersect(line_center)
+                segment = Segment(path.end_point, point_inner)
+                closest_via, distance = Via.closest_in_list(inside_vias.values(), segment)
+                if distance < config.trace_width / 2.0 + config.trace_spacing: # Collision
+                    collision_via = closest_via
+                path.append_segment(point_inner, fillet_radius=outer_fillet_radius, tag=CoilSide.RIGHT)
+                if collision_via is not None:
+                    break
+            else:
+                # Segment to inner right
+                point_inner_right = line_right.intersect(arc_inner)
+                if point_inner_right.x < config.trace_width:
+                    triangular = True
+                    point_inner = line_right.intersect(line_center)
+                    segment = Segment(path.end_point, point_inner)
+                    closest_via, distance = Via.closest_in_list(inside_vias.values(), segment)
+                    if distance < config.trace_width / 2.0 + config.trace_spacing: # Collision
+                        collision_via = closest_via
+                    path.append_segment(point_inner, fillet_radius=outer_fillet_radius, tag=CoilSide.RIGHT)
+                    if collision_via is not None:
+                        break
+                else:
+                    segment = Segment(path.end_point, point_inner_right)
+                    closest_via, distance = Via.closest_in_list(inside_vias.values(), segment)
+                    if distance < config.trace_width / 2.0 + config.trace_spacing: # Collision
+                        collision_via = closest_via
+                    path.append_segment(point_inner_right, fillet_radius=outer_fillet_radius, tag=CoilSide.RIGHT)
+                    if collision_via is not None:
+                        break
 
-            # Arc to inner left
-            point_inner_left = line_left.intersect(arc_inner)
-            arc = Arc(path.end_point, point_inner_left, outer_radius, reverse=True)
-            closest_via, distance = Via.closest_in_list(inside_vias.values(), arc)
-            if distance < config.trace_width / 2.0 + config.trace_spacing: # Collision
-                collision_via = closest_via
-            path.append_arc(point_inner_left, inner_radius, anticlockwise=True, fillet_radius=inner_fillet_radius, tag=CoilSide.INNER)
-            if collision_via is not None:
-                break
+                    # Arc to inner left
+                    point_inner_left = line_left.intersect(arc_inner)
+                    arc = Arc(path.end_point, point_inner_left, outer_radius, reverse=True)
+                    closest_via, distance = Via.closest_in_list(inside_vias.values(), arc)
+                    if distance < config.trace_width / 2.0 + config.trace_spacing: # Collision
+                        collision_via = closest_via
+                    path.append_arc(point_inner_left, inner_radius, anticlockwise=True, fillet_radius=inner_fillet_radius, tag=CoilSide.INNER)
+                    if collision_via is not None:
+                        break
 
             # Construction outer arc with offset
             outer_radius = outer_radius_initial - (i + 1) * loop_offset
@@ -536,12 +558,13 @@ class Coil:
             closest_via, distance = Via.closest_in_list(inside_vias.values(), segment)
             if distance < config.trace_width / 2.0 + config.trace_spacing: # Collision
                 collision_via = closest_via
-            path.append_segment(point_outer_left, fillet_radius=inner_fillet_radius, tag=CoilSide.LEFT)
+            fillet_radius = config.trace_width if triangular else inner_fillet_radius
+            path.append_segment(point_outer_left, fillet_radius=fillet_radius, tag=CoilSide.LEFT)
             if collision_via is not None:
                 break
 
             # Reduce the fillet radius for the next loop
-            min_radius = config.trace_width * 2
+            min_radius = config.trace_width
             outer_fillet_radius -= loop_offset
             if outer_fillet_radius < min_radius:
                 outer_fillet_radius = min_radius
@@ -625,32 +648,49 @@ class Coil:
                 if (anticlockwise and not mirror_outside_via) or (not anticlockwise and mirror_outside_via):
                     # Do not mirror if both flags are set as the two mirror operations cancel each other
                     target_via = target_via.mirrored_y()
+                    inside_connection = inside_connection.mirrored_y()
             except KeyError:
                 raise ValueError(f"Invalid inside_connection : {inside_connection}")
 
-            # Pop the last elements from the path until we find the one that should be connected to the target via
-            while not inside_connection.match_side(path.last().tag):
+            if triangular and inside_connection == CoilConnection.INSIDE_INNER_VIA:
+                # Special case for triangular traces connecting to the inner via
                 path.pop()
-                if len(path.elements) == 1:
-                    raise ValueError("Error : unable to connect the inside of the coil to a via, try increasing hole_diameter or reducing n_slots_per_phase")
-            
-            # Replace the last element in the path with a corner connected to the target via
-            last_element = path.last_geometry()
-            replaced_element = path.pop()
-            fillet_radius = config.trace_width * 2
-            corner = target_via.center.projected(last_element)
-            if not last_element.contains_point(corner):
-                corner = last_element.midpoint()
-            if replaced_element.p2.distance(corner) < fillet_radius:
-                fillet_radius = None # There is no room for the fillet
-            match replaced_element:
-                case PathSegment():
-                    path.append_segment(corner)
-                    path.append_arc(target_via.center, board_center.distance(target_via.center), anticlockwise=corner.x >= target_via.center.x, fillet_radius=fillet_radius)
+                path.pop()
+                while path.last().tag != CoilSide.RIGHT:
+                    path.pop()
+                    if len(path.elements) == 1:
+                        raise ValueError("Error : unable to connect the inside of the coil to a via, try increasing hole_diameter or reducing n_slots_per_phase")
+                
+                # Create a corner at the point of the triangle that connects to the target via
+                last_element = path.last_geometry()
+                corner = Point(target_via.center.x, last_element.p2.y)
+                path.append_segment(corner)
+                path.append_segment(target_via.center)
 
-                case PathArc():
-                    path.append_arc(corner, replaced_element.radius, replaced_element.anticlockwise)
-                    path.append_segment(target_via.center, fillet_radius=fillet_radius)
+            else:
+                # Pop the last elements from the path until we find the one that should be connected to the target via
+                while not inside_connection.match_side(path.last().tag):
+                    path.pop()
+                    if len(path.elements) == 1:
+                        raise ValueError("Error : unable to connect the inside of the coil to a via, try increasing hole_diameter or reducing n_slots_per_phase")
+                
+                # Replace the last element in the path with a corner connected to the target via
+                last_element = path.last_geometry()
+                replaced_element = path.pop()
+                fillet_radius = config.trace_width * 2
+                corner = target_via.center.projected(last_element)
+                if not last_element.contains_point(corner):
+                    corner = last_element.midpoint()
+                if replaced_element.p2.distance(corner) < fillet_radius:
+                    fillet_radius = None # There is no room for the fillet
+                match replaced_element:
+                    case PathSegment():
+                        path.append_segment(corner)
+                        path.append_arc(target_via.center, board_center.distance(target_via.center), anticlockwise=corner.x >= target_via.center.x, fillet_radius=fillet_radius)
+
+                    case PathArc():
+                        path.append_arc(corner, replaced_element.radius, replaced_element.anticlockwise)
+                        path.append_segment(target_via.center, fillet_radius=fillet_radius)
 
         # If the coil is anticlockwise, mirror the path relative to the Y axis
         if anticlockwise:
@@ -782,43 +822,59 @@ class Coil:
             trace_spacing: float,
             construction_geometry = None
         ) -> tuple[float, bool]:
-        radius = initial_fillet_radius
-        arc = Arc(Point.polar(-angle/2.0, arc_radius), Point.polar(angle/2.0, arc_radius), arc_radius)
-        segment_base = Segment(Point.polar(angle/2.0, opposite_radius), Point.polar(angle/2.0, arc_radius))
-        segment = segment_base.offset_closest_to(arc.p1, (trace_spacing + trace_width) * 0.5)
-        corner = segment.intersect(arc)
-        start_point = arc.midpoint()
-        end_point = segment.midpoint()
-        while radius < arc_radius:
-            # Try a fillet with its radius increased by 10% or the width of a trace, whichever is larger
-            try_fillet_radius = max(radius * 0.1, radius + trace_width)
+        arc_radius_offset = 0
+        while arc_radius_offset < via.diameter:
+            radius = initial_fillet_radius
+            arc = Arc(Point.polar(-angle/2.0, (arc_radius + arc_radius_offset)), Point.polar(angle/2.0, (arc_radius + arc_radius_offset)), (arc_radius + arc_radius_offset))
+            segment_base = Segment(Point.polar(angle/2.0, opposite_radius), Point.polar(angle/2.0, (arc_radius + arc_radius_offset)))
+            segment = segment_base.offset_closest_to(arc.p1, (trace_spacing + trace_width) * 0.5)
+            corner = segment.intersect(arc)
+            start_point = arc.midpoint()
+            end_point = segment.midpoint()
+            while radius < (arc_radius + arc_radius_offset):
+                # Try a fillet with its radius increased by 10% or the width of a trace, whichever is larger
+                try_fillet_radius = max(radius * 0.1, radius + trace_width)
 
-            # Construct a path with half an outer arc and half a right segment, and a fillet of the current radius in the middle
-            path = Path(start_point)
-            path.append_arc(corner, arc_radius, anticlockwise=False)
-            path.append_segment(end_point, fillet_radius=try_fillet_radius, suppress_warning=True)
+                # Construct a path with half an outer arc and half a right segment, and a fillet of the current radius in the middle
+                path = Path(start_point)
+                path.append_arc(corner, arc_radius, anticlockwise=False)
+                path.append_segment(end_point, fillet_radius=try_fillet_radius, suppress_warning=True)
 
-            # Get the actual fillet radius and construct an arc at the same place as the fillet
-            fillet_real_radius = path.elements[-2].radius
-            fillet_arc_p1 = path.elements[-3].p2
-            fillet_arc_p2 = path.elements[-2].p2
-            anticlockwise_fillet = Vector.from_two_points(corner, fillet_arc_p1).cross(Vector.from_two_points(corner, fillet_arc_p2)) < 0
-            fillet_arc = Arc(fillet_arc_p1, fillet_arc_p2, radius=fillet_real_radius, reverse=anticlockwise_fillet)
+                # Get the actual fillet radius and construct an arc at the same place as the fillet
+                fillet_real_radius = path.elements[-2].radius
+                fillet_arc_p1 = path.elements[-3].p2
+                fillet_arc_p2 = path.elements[-2].p2
+                anticlockwise_fillet = Vector.from_two_points(corner, fillet_arc_p1).cross(Vector.from_two_points(corner, fillet_arc_p2)) < 0
+                fillet_arc = Arc(fillet_arc_p1, fillet_arc_p2, radius=fillet_real_radius, reverse=anticlockwise_fillet)
 
-            # Check if the fillet has the same radius as the one we are trying to make
-            if not math.isclose(try_fillet_radius, fillet_real_radius, abs_tol=1e-9):
-                return radius, False
+                # Check if the fillet has the same radius as the one we are trying to make
+                if not math.isclose(try_fillet_radius, fillet_real_radius, abs_tol=1e-9):
+                    # Try a larger arc offset
+                    break
 
-            # Check if the end of the fillet is too close to the center line
-            if fillet_arc.p2.x < trace_width * 2.0:
-                return radius, False
+                # Check if the end of the fillet is too close to the center line
+                if fillet_arc.p2.x < trace_width * 2.0:
+                    # Try a larger arc offset
+                    break
 
-            # Check if the fillet is large enough to prevent a collision with the via
-            if via.distance(fillet_arc) >= trace_width / 2.0 + trace_spacing:
-                return try_fillet_radius, True
+                # Check if the fillet is large enough to prevent a collision with the via
+                if via.distance(fillet_arc) >= trace_width / 2.0 + trace_spacing:
+                    # Success : return this fillet radius and arc radius offset
+                    return try_fillet_radius, arc_radius_offset, True
 
-            # This radius looks ok, save it and try again with a larger one
-            radius = try_fillet_radius
+                # This radius looks ok, save it and try again with a larger one
+                radius = try_fillet_radius
+            
+            # Unable to find a fillet radius that doesn't collide with the via for this arc radius,
+            # add an offset and try again
+            if opposite_radius > arc_radius:
+                arc_radius_offset += trace_width
+            else:
+                arc_radius_offset -= trace_width
+        
+        # Unable to find a fillet radius that doesn't collide with the via for any reasonable arc radius,
+        # give up and return the last values tried
+        return radius, arc_radius_offset, False
 
 class Link:
     """A trace on the board linking two coils"""
@@ -1225,7 +1281,7 @@ class PCB:
         self.construction_geometry = construction_geometry
         self.stats = stats
     
-    def generate(config: Config):
+    def generate(config: Config, compute_stats: bool):
         """Generate a new PCB based on the given config"""
         
         coils = {}
@@ -1820,48 +1876,51 @@ class PCB:
             construction_geometry = construction_geometry_rotated
         
         # Compute the stats
-        coil_turns = 0
-        coil_length = 0
-        coil_radial_length = 0
-        coil_resistance = 0
-        for layer_id in config.copper_layers:
-            coil = coils[layer_id][0]
-            coil_turns += coil.n_turns
-            length = coil.length()
-            resistance = coil.resistance(config)
-            coil_length += length
-            coil_radial_length += coil.radial_length(board_center)
-            coil_resistance += resistance
-        phases_length = {}
-        phases_resistance = {}
-        if config.link_series_coils:
-            for phase in range(config.n_phases):
-                length = coil_length * config.n_slots_per_phase
-                resistance = coil_resistance * config.n_slots_per_phase
-                for via in vias:
-                    # This includes links vias
-                    if via.phase == phase:
-                        resistance += config.via_resistance
-                for link in links:
-                    if link.phase == phase:
-                        length += link.length()
-                        resistance += link.resistance(config)
-                phases_length[phase] = length
-                phases_resistance[phase] = resistance
+        if compute_stats:
+            coil_turns = 0
+            coil_length = 0
+            coil_radial_length = 0
+            coil_resistance = 0
+            for layer_id in config.copper_layers:
+                coil = coils[layer_id][0]
+                coil_turns += coil.n_turns
+                length = coil.length()
+                resistance = coil.resistance(config)
+                coil_length += length
+                coil_radial_length += coil.radial_length(board_center)
+                coil_resistance += resistance
+            phases_length = {}
+            phases_resistance = {}
+            if config.link_series_coils:
+                for phase in range(config.n_phases):
+                    length = coil_length * config.n_slots_per_phase
+                    resistance = coil_resistance * config.n_slots_per_phase
+                    for via in vias:
+                        # This includes links vias
+                        if via.phase == phase:
+                            resistance += config.via_resistance
+                    for link in links:
+                        if link.phase == phase:
+                            length += link.length()
+                            resistance += link.resistance(config)
+                    phases_length[phase] = length
+                    phases_resistance[phase] = resistance
+            else:
+                for phase in range(config.n_phases):
+                    phases_length = coil_length
+                    phases_resistance = coil_resistance + config.n_layers * config.via_resistance
+            stats = PCBStats(
+                coil_turns = coil_turns,
+                coil_length = coil_length,
+                coil_radial_length = coil_radial_length,
+                coil_resistance = coil_resistance,
+                phases_length = phases_length,
+                phases_resistance = phases_resistance,
+                n_magnets = config.n_magnets,
+                magnets_diameter = config.magnets_diameter,
+            )
         else:
-            for phase in range(config.n_phases):
-                phases_length = coil_length
-                phases_resistance = coil_resistance + config.n_layers * config.via_resistance
-        stats = PCBStats(
-            coil_turns = coil_turns,
-            coil_length = coil_length,
-            coil_radial_length = coil_radial_length,
-            coil_resistance = coil_resistance,
-            phases_length = phases_length,
-            phases_resistance = phases_resistance,
-            n_magnets = config.n_magnets,
-            magnets_diameter = config.magnets_diameter,
-        )
+            stats = None
 
         # Create the PCB
         return PCB(

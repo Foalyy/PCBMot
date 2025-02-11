@@ -19,12 +19,13 @@ args = parser.parse_args()
 if args.output is None and args.kicad is None:
     print("Please provide at least either the --output or the --kicad argument", file=sys.stderr)
     sys.exit(1)
+compute_stats = args.stats is not None
 
 # Read the config file
 config = Config.read(args.config)
 
 # Generate the PCB based on the given config
-pcb = PCB.generate(config)
+pcb = PCB.generate(config, compute_stats)
 
 # Create the SVG drawing
 if args.output:
@@ -45,5 +46,5 @@ if args.kicad:
     kicadpcb.save()
 
 # Write the stats either in a file or on the standard output
-if args.stats is not None:
+if compute_stats:
     pcb.stats.write(args.stats)
