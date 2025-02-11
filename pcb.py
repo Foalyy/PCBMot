@@ -2,10 +2,14 @@ from typing import Self
 from enum import Enum
 from config import Config, BoardShape, TerminalType
 import svgwrite as svg
-import math
+import math, json
 from geometry import sin, cos, tan, asin, acos, atan, atan2
 from geometry import DrawableObject, Vector, Point, Line, Segment, Circle, Arc, PathSegment, PathArc, Path
 from kicad import KicadPCB
+
+def calculate_resistance(config: Config, length: float, width: float, thickness: float):
+    """Calculate the resistance of a copper trace of the given geometry based on the physical parameters in the config"""
+    return (config.copper_resistivity * length / (width * thickness)) * (1 + config.copper_temperature_coefficient * (config.temperature - 20.0))
 
 class CoilSide(Enum):
     """Enum that describes the four sides of a coil: OUTER, RIGHT, INNER, and LEFT"""
@@ -90,10 +94,11 @@ class CoilConnection(Enum):
 class Via:
     """A via allowing connections between layers on the board"""
 
-    def __init__(self, center: Point, diameter: float, hole_diameter: float, tag = None, label: str = None):
+    def __init__(self, center: Point, diameter: float, hole_diameter: float, phase: int = None, tag = None, label: str = None):
         self.center: Point = center
         self.diameter: float = diameter
         self.hole_diameter: float = hole_diameter
+        self.phase: int = phase
         self.tag = tag
         self.label = label
     
@@ -116,6 +121,7 @@ class Via:
             center = self.center,
             diameter = self.diameter,
             hole_diameter = self.hole_diameter,
+            phase = self.phase,
             tag = self.tag,
             label = self.label,
         )
@@ -393,14 +399,17 @@ class Terminal:
 class Coil:
     """A single coil on the board"""
 
-    def __init__(self, path: Path, rotation: float, n_turns: int, label: str = None):
+    def __init__(self, path: Path, trace_width: float, thickness: float, rotation: float, n_turns: int, label: str = None):
         self.path: Path = path
+        self.trace_width: float = trace_width
+        self.thickness: float = thickness
         self.rotation: float = rotation
         self.n_turns: int = n_turns
         self.label = label
 
     def generate(
             config: Config,
+            layer_id: str,
             board_center: Point,
             angle: float,
             outer_radius: float,
@@ -475,7 +484,7 @@ class Coil:
         path = Path(point_start)
         n_turns = 0
         collision_via = None
-        for i in range(config.max_turns_per_layer):
+        for i in range(config.max_turns_per_layer + 1): # +1 because a part of the first and last turns will be removed later
             # Construction geometry
             line_left = Line.from_two_points(board_center, Point.polar(-angle/2.0, outer_radius)).offset(loop_offset * (i + 0.5))
             line_right = Line.from_two_points(board_center, Point.polar(angle/2.0, outer_radius)).offset(-loop_offset * (i + 0.5))
@@ -544,12 +553,16 @@ class Coil:
             n_turns += 1
 
         # Connect the start of the coil to the requested via or terminal
+        n_removed = 0
         while not CoilConnection.match_side(target_outside_connection, path.first().tag):
             # Pop the first elements from the path until we find the one that should be connected to the target via or terminal
             path.pop_first()
             path.pop_first() # Fillet
             if len(path.elements) == 1:
                 raise ValueError("Error : unable to connect the outside of the coil to a via")
+            n_removed += 1
+        if n_removed >= 2:
+            n_turns -= 1
         if outside_connection == CoilConnection.TERMINAL or outside_connection is None:
             # Replace the first element in the path with a corner connected to the terminal
             if terminal is not None:
@@ -639,15 +652,65 @@ class Coil:
                     path.append_arc(corner, replaced_element.radius, replaced_element.anticlockwise)
                     path.append_segment(target_via.center, fillet_radius=fillet_radius)
 
-        # Return the coil based on this path, mirrored relative to the Y axis if anticlockwise
+        # If the coil is anticlockwise, mirror the path relative to the Y axis
         if anticlockwise:
             path = path.mirrored_y()
-        return Coil(path, 0.0, n_turns)
+        
+        # Get the trace thickness based on the layer
+        is_outer_layer: bool = (layer_id == config.copper_layers[0] or layer_id == config.copper_layers[-1])
+        thickness = config.outer_layers_copper_thickness if is_outer_layer else config.inner_layers_copper_thickness
+
+        # Return the coil based on this path
+        return Coil(
+            path = path,
+            trace_width = config.trace_width,
+            thickness = thickness,
+            rotation = 0.0,
+            n_turns = n_turns,
+        )
     
+    def length(self) -> float:
+        """Calculate the total length of the path of this coil"""
+        length = 0
+        p1 = self.path.start_point
+        for element in self.path.elements:
+            geometry = element.geometry(p1)
+            length += geometry.length()
+            p1 = element.p2
+        return length
+    
+    def radial_length(self, center: Point) -> float:
+        """Calculate the length of this coil projected on its radial direction
+        
+        This is currently an approximation for arc elements based only on the start and end points, but it is good enough
+        for the usual geometries of coils.
+        """
+        radial_length = 0
+        p1 = self.path.start_point
+        for element in self.path.elements:
+            geometry = element.geometry(p1)
+            d1 = center.distance(geometry.p1)
+            d2 = center.distance(geometry.p2)
+            radial_length += math.fabs(d2 - d1)
+            p1 = element.p2
+        return radial_length
+    
+    def resistance(self, config: Config) -> float:
+        """Calculate the total resistance of this coil based on its trace width and thickness"""
+        resistance = 0
+        p1 = self.path.start_point
+        for element in self.path.elements:
+            geometry = element.geometry(p1)
+            resistance += calculate_resistance(config, geometry.length(), self.trace_width, self.thickness)
+            p1 = element.p2
+        return resistance
+
     def copy(self) -> Self:
         """Create a copy of this Coil"""
         return Coil(
             path = self.path,
+            trace_width = self.trace_width,
+            thickness = self.thickness,
             rotation = self.rotation,
             n_turns = self.n_turns,
             label = self.label
@@ -683,7 +746,6 @@ class Coil:
             parent: svg.base.BaseElement,
             color: str = None,
             opacity: float = None,
-            thickness: float = None,
             dashes: str = None,
         ):
         """Draw this Coil on the given SVG drawing
@@ -695,17 +757,17 @@ class Coil:
             parent = parent,
             color = color,
             opacity = opacity,
-            thickness = thickness,
+            line_width = self.trace_width,
             dashes = dashes,
             label = self.label,
         )
         return self
     
-    def draw_kicad(self, kicadpcb: KicadPCB, width: float, layer: str) -> Self:
+    def draw_kicad(self, kicadpcb: KicadPCB, layer: str) -> Self:
         """Draw this Coil on the given Kicad board"""
         kicadpcb.path(
             path = self.path,
-            width = width,
+            width = self.trace_width,
             layer = layer,
         )
         return self
@@ -761,19 +823,43 @@ class Coil:
 class Link:
     """A trace on the board linking two coils"""
 
-    def __init__(self, path: Path, trace_width: float, layer: str, label: str = None):
+    def __init__(self, path: Path, trace_width: float, thickness: float, layer: str, phase: int = None, label: str = None):
         self.path: Path = path
         self.trace_width: float = trace_width
+        self.thickness: float = thickness
         self.layer: str = layer
+        self.phase: str = phase
         self.label: str = label
+    
+    def length(self) -> float:
+        """Calculate the length of this Link trace"""
+        length = 0
+        p1 = self.path.start_point
+        for element in self.path.elements:
+            geometry = element.geometry(p1)
+            length += geometry.length()
+            p1 = element.p2
+        return length
+    
+    def resistance(self, config: Config) -> float:
+        """Calculate the resistance of this Link trace"""
+        resistance = 0
+        p1 = self.path.start_point
+        for element in self.path.elements:
+            geometry = element.geometry(p1)
+            resistance += calculate_resistance(config, geometry.length(), self.trace_width, self.thickness)
+            p1 = element.p2
+        return resistance
     
     def copy(self) -> Self:
         """Create a copy of this Link"""
         return Link(
             path = self.path,
             trace_width = self.trace_width,
+            thickness = self.thickness,
             layer = self.layer,
-            label = self.label
+            phase = self.phase,
+            label = self.label,
         )
 
     def rotate(self, center: Self, angle: float):
@@ -815,7 +901,7 @@ class Link:
             parent = parent,
             color = color,
             opacity = opacity,
-            thickness = self.trace_width,
+            line_width = self.trace_width,
             dashes = dashes,
             label = self.label,
         )
@@ -932,10 +1018,10 @@ class Outline:
             drawing: svg.Drawing,
             parent: svg.base.BaseElement,
             color: str = None,
-            thickness: float = None,
+            line_width: float = None,
             dashes: str = None,
             marking_color: str = None,
-            marking_thickness: float = None,
+            marking_line_width: float = None,
         ):
         """Draw this Outline on the given SVG drawing
         
@@ -948,7 +1034,7 @@ class Outline:
                     self.board_center.to_viewport().as_tuple(),
                     self.board_diameter / 2.0,
                     stroke = color,
-                    stroke_width = thickness,
+                    stroke_width = line_width,
                     stroke_dasharray = dashes,
                     fill = "none",
                     label = f"Outline_edge",
@@ -959,7 +1045,7 @@ class Outline:
                     parent,
                     color = color,
                     opacity = 1.0,
-                    thickness = thickness,
+                    line_width = line_width,
                     dashes = dashes,
                     label = f"Outline_edge",
                 )
@@ -969,7 +1055,7 @@ class Outline:
             self.board_center.to_viewport().as_tuple(),
             self.hole_diameter / 2.0,
             stroke = color,
-            stroke_width = thickness,
+            stroke_width = line_width,
             stroke_dasharray = dashes,
             fill = "none",
             label = f"Outline_hole",
@@ -983,7 +1069,7 @@ class Outline:
                     center.to_viewport().as_tuple(),
                     self.mountpoints_diameter / 2.0,
                     stroke = color,
-                    stroke_width = thickness,
+                    stroke_width = line_width,
                     stroke_dasharray = dashes,
                     fill = "none",
                     label = f"Mountpoint_{i}",
@@ -993,7 +1079,7 @@ class Outline:
                         center.to_viewport().as_tuple(),
                         self.mountpoints_marking_diameter / 2.0,
                         stroke = marking_color,
-                        stroke_width = marking_thickness,
+                        stroke_width = marking_line_width,
                         fill = "none",
                         label = f"Mountpoint_marking_{i}",
                     ))
@@ -1053,6 +1139,64 @@ class Outline:
 
         return self
 
+class PCBStats:
+    """A storage class for a list of computed stats about a PCB"""
+    def __init__(
+        self,
+        coil_turns: int,
+        coil_length: float,
+        coil_radial_length: float,
+        coil_resistance: float,
+        phases_length: float,
+        phases_resistance: float,
+        n_magnets: int,
+        magnets_diameter: float,
+    ):
+        self.coil_turns = coil_turns
+        self.coil_length = coil_length
+        self.coil_radial_length = coil_radial_length
+        self.coil_resistance = coil_resistance
+        self.phases_length = phases_length
+        self.phases_resistance = phases_resistance
+        self.n_magnets = n_magnets
+        self.magnets_diameter = magnets_diameter
+
+        self.coil_radial_length_ratio = coil_radial_length / coil_length
+        average_phase_length = 0
+        average_phase_resistance = 0
+        for phase in phases_length:
+            average_phase_length += phases_length[phase]
+        self.average_phase_length = average_phase_length / len(phases_length)
+        for phase in phases_resistance:
+            average_phase_resistance += phases_resistance[phase]
+        self.average_phase_resistance = average_phase_resistance / len(phases_resistance)
+    
+    def json(self) -> str:
+        """Return the stats as a JSON-formatted string"""
+        return json.dumps({
+            'coil_turns': self.coil_turns,
+            'coil_length': self.coil_length,
+            'coil_radial_length': self.coil_radial_length,
+            'coil_radial_length_ratio': self.coil_radial_length_ratio,
+            'coil_resistance': self.coil_resistance,
+            'phases_length': self.phases_length,
+            'average_phase_length': self.average_phase_length,
+            'phases_resistance': self.phases_resistance,
+            'average_phase_resistance': self.average_phase_resistance,
+            'n_magnets': self.n_magnets,
+            'magnets_diameter': self.magnets_diameter,
+        }, indent=4)
+    
+    def write(self, destination: str):
+        """Write the stats to the given file, or the standard output if the destination is '-'"""
+        data = self.json()
+        if destination == '-':
+            print(data)
+        else:
+            with open(destination, 'w') as f:
+                f.write(data)
+
+
 class PCB:
     """A PCB containing layers"""
 
@@ -1066,7 +1210,8 @@ class PCB:
         links: list[Link],
         top_silk: list[SilkscreenText],
         bottom_silk: list[SilkscreenText],
-        construction_geometry: list
+        construction_geometry: list,
+        stats: PCBStats,
     ):
         self.config = config
         self.board_center = board_center
@@ -1078,6 +1223,7 @@ class PCB:
         self.top_silk = top_silk
         self.bottom_silk = bottom_silk
         self.construction_geometry = construction_geometry
+        self.stats = stats
     
     def generate(config: Config):
         """Generate a new PCB based on the given config"""
@@ -1367,6 +1513,7 @@ class PCB:
                     if slot % 2 == 1:
                         via = via.mirrored_y()
                     via = via.rotated(board_center, 360.0 * coil_idx / config.n_coils)
+                    via.phase = phase
                     via.label = f"Via_{coil_names[coil_idx]}_{CoilConnection.label(connection)}"
                     vias.append(via)
                 for connection, via in outside_vias.items():
@@ -1377,6 +1524,7 @@ class PCB:
                             and not (optimise_inner_vias and slot % 2 == 1 and CoilConnection.is_inner(connection)):
                         via = via.mirrored_y()
                     via = via.rotated(board_center, 360.0 * coil_idx / config.n_coils)
+                    via.phase = phase
                     via.label = f"Via_{coil_names[coil_idx]}_{CoilConnection.label(connection)}"
                     vias.append(via)
         
@@ -1428,6 +1576,7 @@ class PCB:
             # Generate the base Coil for this layer
             coil_even = Coil.generate(
                 config = config,
+                layer_id = layer_id,
                 board_center = board_center,
                 angle = config.coil_angle,
                 outer_radius = config.board_radius - config.board_outer_margin - config.trace_width / 2.0,
@@ -1450,6 +1599,7 @@ class PCB:
                 # before mirroring the coil.
                 coil_odd = Coil.generate(
                     config = config,
+                    layer_id = layer_id,
                     board_center = board_center,
                     angle = config.coil_angle,
                     outer_radius = config.board_radius - config.board_outer_margin - config.trace_width / 2.0,
@@ -1497,7 +1647,7 @@ class PCB:
                 connection_point_2 = connection_point_1
                 if not optimise_inner_vias:
                     connection_point_2 = connection_point_2.mirrored_y()
-                connection_point_2 = connection_point_2.rotated(board_center, config.coil_angle * config.n_phases)
+                connection_point_2 = connection_point_2.rotated(board_center, (360.0 / config.n_coils) * config.n_phases)
                 vias_circle_radius = board_center.distance(connection_point_1)
                 trace_center_radius = vias_circle_radius - config.via_diameter / 2.0 - config.trace_spacing - config.series_link_inner_trace_width / 2.0 - config.series_link_inner_offset
                 base_path_inner = Path(connection_point_1)
@@ -1510,6 +1660,8 @@ class PCB:
                     corner1 = connection_point_1.closest(line1.intersect(circle))
                     corner2 = connection_point_2.closest(line2.intersect(circle))
                     fillet_radius = connection_point_1.distance(corner1) / 2.0
+                    if fillet_radius < config.series_link_inner_trace_width:
+                        fillet_radius = None
                     base_path_inner.append_segment(corner1)
                     base_path_inner.append_arc(corner2, trace_center_radius, anticlockwise=False, fillet_radius=fillet_radius)
                     base_path_inner.append_segment(connection_point_2, fillet_radius=fillet_radius)
@@ -1518,7 +1670,7 @@ class PCB:
                 # Draw a path offset toward the outer side of the board that connects these two points for the first coil
                 if config.n_slots_per_phase >= 4:
                     connection_point_1 = coils[config.copper_layers[0]][0].path.start_point
-                    connection_point_2 = connection_point_1.mirrored_y().rotated(board_center, config.coil_angle * config.n_phases)
+                    connection_point_2 = connection_point_1.mirrored_y().rotated(board_center, (360.0 / config.n_coils) * config.n_phases)
                     outer_vias_radius = config.board_radius - config.board_outer_margin + config.outer_vias_offset + config.trace_spacing + config.series_link_outer_trace_width / 2.0
                     vias_circle_radius = config.board_radius - config.board_outer_margin + max(config.via_diameter / 2.0, config.series_link_outer_trace_width / 2.0) + config.trace_spacing
                     trace_center_radius = max(vias_circle_radius + config.via_diameter / 2.0 + config.trace_spacing + config.series_link_outer_trace_width / 2.0, outer_vias_radius) + config.series_link_outer_offset
@@ -1531,6 +1683,8 @@ class PCB:
                     corner1 = connection_point_1.closest(line1.intersect(circle_trace))
                     corner2 = connection_point_2.closest(line2.intersect(circle_trace))
                     fillet_radius = via_pos_1.distance(corner1) / 2.0
+                    if fillet_radius < config.series_link_outer_trace_width:
+                        fillet_radius = None
                     base_path_outer = Path(via_pos_1)
                     base_path_outer.append_segment(corner1)
                     base_path_outer.append_arc(corner2, trace_center_radius, anticlockwise=False, fillet_radius=fillet_radius)
@@ -1539,20 +1693,37 @@ class PCB:
                 # Create the links on different layers by rotating the base path accordingly for each phase
                 for slot_pair in range(config.n_slots_per_phase - 1):
                     for phase in range(config.n_phases):
-                        angle = ((slot_pair * config.n_phases) + phase) * config.coil_angle
+                        angle = ((slot_pair * config.n_phases) + phase) * (360.0 / config.n_coils)
                         label = f"Link_{coil_names[slot_pair * config.n_phases + phase]}_{coil_names[(slot_pair + 1) * config.n_phases + phase]}"
+                        layer_id = config.copper_layers[phase]
+                        is_outer_layer = (layer_id == config.copper_layers[0] or layer_id == config.copper_layers[-1])
+                        thickness = config.outer_layers_copper_thickness if is_outer_layer else config.inner_layers_copper_thickness
                         if slot_pair % 2 == 0:
                             path = base_path_inner.rotated(board_center, angle)
-                            link = Link(path, config.series_link_inner_trace_width, config.copper_layers[phase], label=label)
+                            link = Link(
+                                path = path,
+                                trace_width = config.series_link_inner_trace_width,
+                                thickness = thickness,
+                                layer = layer_id,
+                                phase = phase,
+                                label = label,
+                            )
                             links.append(link)
                         else:
                             path = base_path_outer.rotated(board_center, angle)
-                            link = Link(path, config.series_link_outer_trace_width, config.copper_layers[phase], label=label)
+                            link = Link(
+                                path = path,
+                                trace_width = config.series_link_outer_trace_width,
+                                thickness = thickness,
+                                layer = layer_id,
+                                phase = phase,
+                                label = label,
+                            )
                             links.append(link)
                             via1_label = f"Link_via_{coil_names[slot_pair * config.n_phases + phase]}"
-                            via1 = Via(via_pos_1, config.via_diameter, config.via_drill_diameter, label=via1_label).rotated(board_center, angle)
+                            via1 = Via(via_pos_1, config.via_diameter, config.via_drill_diameter, phase=phase, label=via1_label).rotated(board_center, angle)
                             via2_label = f"Link_via_{coil_names[(slot_pair + 1) * config.n_phases + phase]}"
-                            via2 = Via(via_pos_2, config.via_diameter, config.via_drill_diameter, label=via2_label).rotated(board_center, angle)
+                            via2 = Via(via_pos_2, config.via_diameter, config.via_drill_diameter, phase=phase, label=via2_label).rotated(board_center, angle)
                             link_vias.extend([via1, via2])
             else:
                 print("Warning : unable to link the coils, not enough layers")
@@ -1562,8 +1733,10 @@ class PCB:
         link_com_connection_point = None
         if config.link_com:
             layer_id = config.copper_layers[0]
+            is_outer_layer = (layer_id == config.copper_layers[0] or layer_id == config.copper_layers[-1])
+            thickness = config.outer_layers_copper_thickness if is_outer_layer else config.inner_layers_copper_thickness
             connection_point_1 = coils[layer_id][0].path.start_point
-            connection_point_2 = connection_point_1.rotated(board_center, -config.coil_angle)
+            connection_point_2 = connection_point_1.rotated(board_center, -(360.0 / config.n_coils))
             terminal_circle_radius = board_center.distance(terminal_base.center) if terminal_base is not None else 0
             intermediate_circle_radius = config.board_radius - config.board_outer_margin + max(config.com_link_trace_width / 2.0 + config.trace_spacing, coil_outside_connection_length)
             outer_vias_radius = config.board_radius - config.board_outer_margin + config.outer_vias_offset + config.trace_spacing + config.com_link_trace_width / 2.0
@@ -1588,9 +1761,15 @@ class PCB:
                 base_path_com.append_arc(corner2, trace_center_radius, anticlockwise=True, fillet_radius=fillet_radius)
                 base_path_com.append_segment(intermediate_point_2, fillet_radius=fillet_radius)
             for i in range(config.n_phases - 1):
-                path = base_path_com.rotated(board_center, -(i + 1) * config.coil_angle)
+                path = base_path_com.rotated(board_center, -(i + 1) * (360.0 / config.n_coils))
                 label = f"COM_{coil_names[-(i+2)]}_{coil_names[-(i+1)]}"
-                link = Link(path, config.com_link_trace_width, layer_id, label=label)
+                link = Link(
+                    path = path,
+                    trace_width = config.com_link_trace_width,
+                    thickness = thickness,
+                    layer = layer_id,
+                    label = label,
+                )
                 links.append(link)
             link_com_connection_point = intermediate_point_1
 
@@ -1639,6 +1818,50 @@ class PCB:
             for element in construction_geometry:
                 construction_geometry_rotated.append(element.rotated(board_center, config.rotation))
             construction_geometry = construction_geometry_rotated
+        
+        # Compute the stats
+        coil_turns = 0
+        coil_length = 0
+        coil_radial_length = 0
+        coil_resistance = 0
+        for layer_id in config.copper_layers:
+            coil = coils[layer_id][0]
+            coil_turns += coil.n_turns
+            length = coil.length()
+            resistance = coil.resistance(config)
+            coil_length += length
+            coil_radial_length += coil.radial_length(board_center)
+            coil_resistance += resistance
+        phases_length = {}
+        phases_resistance = {}
+        if config.link_series_coils:
+            for phase in range(config.n_phases):
+                length = coil_length * config.n_slots_per_phase
+                resistance = coil_resistance * config.n_slots_per_phase
+                for via in vias:
+                    # This includes links vias
+                    if via.phase == phase:
+                        resistance += config.via_resistance
+                for link in links:
+                    if link.phase == phase:
+                        length += link.length()
+                        resistance += link.resistance(config)
+                phases_length[phase] = length
+                phases_resistance[phase] = resistance
+        else:
+            for phase in range(config.n_phases):
+                phases_length = coil_length
+                phases_resistance = coil_resistance + config.n_layers * config.via_resistance
+        stats = PCBStats(
+            coil_turns = coil_turns,
+            coil_length = coil_length,
+            coil_radial_length = coil_radial_length,
+            coil_resistance = coil_resistance,
+            phases_length = phases_length,
+            phases_resistance = phases_resistance,
+            n_magnets = config.n_magnets,
+            magnets_diameter = config.magnets_diameter,
+        )
 
         # Create the PCB
         return PCB(
@@ -1652,6 +1875,7 @@ class PCB:
             top_silk = top_silk,
             bottom_silk = bottom_silk,
             construction_geometry = construction_geometry,
+            stats = stats,
         )
     
     def draw_svg(self, drawing: svg.Drawing) -> Self:
@@ -1675,7 +1899,6 @@ class PCB:
                         drawing = drawing,
                         parent = svg_layers[layer_id],
                         color = self.config.copper_layers_color.get(layer_id),
-                        thickness = self.config.trace_width,
                         dashes = "none",
                     )
 
@@ -1742,10 +1965,10 @@ class PCB:
                 drawing = drawing,
                 parent = svg_layers['outline'],
                 color = self.config.outline_color,
-                thickness = self.config.outline_thickness,
+                line_width = self.config.outline_line_width,
                 dashes = "none",
                 marking_color = self.config.top_silk_color,
-                marking_thickness = self.config.silk_thickness,
+                marking_line_width = self.config.silk_line_width,
             )
 
         # Draw the construction geometry
@@ -1760,7 +1983,7 @@ class PCB:
                             drawing = drawing,
                             parent = svg_layers['construction'],
                             color = self.config.construction_geometry_color,
-                            thickness = self.config.construction_geometry_thickness,
+                            line_width = self.config.construction_geometry_line_width,
                             dashes = self.config.construction_geometry_dashes,
                         )
 
@@ -1772,7 +1995,7 @@ class PCB:
                     center = center.to_viewport().as_tuple(),
                     r = self.config.magnets_diameter / 2.0,
                     stroke = self.config.magnets_color,
-                    stroke_width = self.config.magnets_thickness,
+                    stroke_width = self.config.magnets_line_width,
                     stroke_opacity = self.config.magnets_opacity,
                     stroke_dasharray = self.config.magnets_dashes,
                     label = f"Magnet_{i + 1}"
@@ -1793,7 +2016,6 @@ class PCB:
                 for object in self.coils[layer_id]:
                     object.draw_kicad(
                         kicadpcb = kicadpcb,
-                        width = self.config.trace_width,
                         layer = layer_id,
                     )
 
@@ -1823,7 +2045,7 @@ class PCB:
             self.outline.draw_kicad(
                 kicadpcb = kicadpcb,
                 width = self.config.trace_width,
-                marking_width = self.config.silk_thickness,
+                marking_width = self.config.silk_line_width,
             )
 
         # Draw the construction geometry
@@ -1831,7 +2053,7 @@ class PCB:
             for object in self.construction_geometry:
                 object.draw_kicad(
                     kicadpcb = kicadpcb,
-                    width = self.config.construction_geometry_thickness,
+                    width = self.config.construction_geometry_line_width,
                     layer = 'construction',
                     stroke_type = 'dash_dot',
                 )
@@ -1843,6 +2065,6 @@ class PCB:
                 kicadpcb.gr_circle(
                     center = center,
                     radius = self.config.magnets_diameter / 2.0,
-                    width = self.config.magnets_thickness,
+                    width = self.config.magnets_line_width,
                     layer = 'magnets',
                 )

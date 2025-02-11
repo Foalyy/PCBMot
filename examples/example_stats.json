@@ -1,0 +1,21 @@
+{
+    "coil_turns": 117,
+    "coil_length": 2112.5261360297677,
+    "coil_radial_length": 1176.2968942223276,
+    "coil_radial_length_ratio": 0.5568200431512921,
+    "coil_resistance": 17.851673115690826,
+    "phases_length": {
+        "0": 8503.768494514981,
+        "1": 8503.768494515693,
+        "2": 8503.768494515843
+    },
+    "average_phase_length": 8503.768494515507,
+    "phases_resistance": {
+        "0": 71.4679975782487,
+        "1": 71.5293026937357,
+        "2": 71.52930269373611
+    },
+    "average_phase_resistance": 71.50886765524017,
+    "n_magnets": 8,
+    "magnets_diameter": 8.0
+}

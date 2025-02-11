@@ -1,7 +1,7 @@
 from typing import Self
 from inkscape_drawing import InkscapeDrawing
 from config import Config, BoardShape, TerminalType
-from pcb import PCB
+from pcb import PCB, PCBStats
 from kicad import KicadPCB
 import argparse, sys
 
@@ -14,6 +14,7 @@ parser = argparse.ArgumentParser(
 parser.add_argument('-c', '--config', required=True, help="Config file that describes the design to generate")
 parser.add_argument('-o', '--output', help="SVG output file")
 parser.add_argument('-k', '--kicad', help="Kicad PCB output file")
+parser.add_argument('-s', '--stats', help="Stats output file ('-' to print on the standard output)")
 args = parser.parse_args()
 if args.output is None and args.kicad is None:
     print("Please provide at least either the --output or the --kicad argument", file=sys.stderr)
@@ -42,3 +43,7 @@ if args.kicad:
     kicadpcb = KicadPCB(args.kicad, config)
     pcb.draw_kicad(kicadpcb)
     kicadpcb.save()
+
+# Write the stats either in a file or on the standard output
+if args.stats is not None:
+    pcb.stats.write(args.stats)

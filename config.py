@@ -15,6 +15,26 @@ class TerminalType(Enum):
 ## Board config
 class Config:
     options = [
+        # General
+        {
+            'name': 'temperature',
+            'json': 'general.temperature',
+            'type': float,
+            'default': 20.0, # °C
+        },
+        {
+            'name': 'copper_resistivity',
+            'json': 'general.copper_resistivity',
+            'type': float,
+            'default': 1.68e-5, # Ohm.mm at 20°C
+        },
+        {
+            'name': 'copper_temperature_coefficient',
+            'json': 'general.copper_temperature_coefficient',
+            'type': float,
+            'default': 4.04e-3, # K^-1
+        },
+
         # Board
         {
             'name': 'board_shape',
@@ -85,6 +105,18 @@ class Config:
             'json': 'board.rotation',
             'type': float,
             'default': 0.0,
+        },
+        {
+            'name': 'outer_layers_copper_thickness',
+            'json': 'board.outer_layers_copper_thickness',
+            'type': float,
+            'default': 0.0348, # 1 oz
+        },
+        {
+            'name': 'inner_layers_copper_thickness',
+            'json': 'board.inner_layers_copper_thickness',
+            'type': float,
+            'default': 0.0174, # 0.5 oz
         },
 
         # Board / mountpoints
@@ -253,6 +285,12 @@ class Config:
             'type': float,
             'default': 0.0,
         },
+        {
+            'name': 'via_resistance',
+            'json': 'vias.via_resistance',
+            'type': float,
+            'default': 0.0, # Ohm
+        },
 
         # Terminals
         {
@@ -366,6 +404,9 @@ class Config:
 
     def __init__(
         self,
+        temperature: float,
+        copper_resistivity: float,
+        copper_temperature_coefficient: float,
         board_shape: BoardShape,
         board_diameter: float,
         hole_diameter: float,
@@ -378,6 +419,9 @@ class Config:
         board_thickness: float,
         board_outer_margin: float,
         board_inner_margin: float,
+        rotation: float,
+        inner_layers_copper_thickness: float,
+        outer_layers_copper_thickness: float,
         n_phases: int,
         four_layers_inner_vias: bool,
         n_slots_per_phase: int,
@@ -390,6 +434,7 @@ class Config:
         via_drill_diameter: float,
         outer_vias_offset: float,
         inner_vias_offset: float,
+        via_resistance: float,
         terminal_type: TerminalType,
         terminal_diameter: float,
         terminal_hole_diameter: float,
@@ -404,7 +449,6 @@ class Config:
         com_link_offset: float,
         coil_names_font_size: float,
         coil_names_offset: float,
-        rotation: float,
         magnets_diameter: float,
         magnets_position_radius: float,
         draw_vias: bool,
@@ -443,6 +487,9 @@ class Config:
 
 
         # Save the parameters
+        self.temperature: float = temperature
+        self.copper_resistivity: float = copper_resistivity
+        self.copper_temperature_coefficient: float = copper_temperature_coefficient
         self.board_shape: BoardShape = board_shape
         self.board_diameter: float = board_diameter
         self.hole_diameter: float = hole_diameter
@@ -455,6 +502,9 @@ class Config:
         self.board_thickness: float = board_thickness
         self.board_outer_margin: float = board_outer_margin
         self.board_inner_margin: float = board_inner_margin
+        self.rotation: float = rotation
+        self.inner_layers_copper_thickness: float = inner_layers_copper_thickness
+        self.outer_layers_copper_thickness: float = outer_layers_copper_thickness
         self.n_phases: int = n_phases
         self.n_slots_per_phase: int = n_slots_per_phase
         self.coil_angle: float = coil_angle
@@ -467,6 +517,7 @@ class Config:
         self.via_drill_diameter: float = via_drill_diameter
         self.outer_vias_offset: float = outer_vias_offset
         self.inner_vias_offset: float = inner_vias_offset
+        self.via_resistance: float = via_resistance
         self.terminal_type: TerminalType = terminal_type
         self.terminal_diameter: float = terminal_diameter
         self.terminal_hole_diameter: float = terminal_hole_diameter
@@ -481,7 +532,6 @@ class Config:
         self.com_link_offset: float = com_link_offset
         self.coil_names_font_size: float = coil_names_font_size
         self.coil_names_offset: float = coil_names_offset
-        self.rotation: float = rotation
         self.magnets_diameter: float = magnets_diameter
         self.magnets_position_radius: float = magnets_position_radius
         self.draw_vias: bool = draw_vias
@@ -550,11 +600,11 @@ class Config:
         # SVG style
         self.background_color = "#001023"
         self.construction_geometry_color: str = "#848484"
-        self.construction_geometry_thickness: float = board_diameter / 500.
-        t = self.construction_geometry_thickness
+        self.construction_geometry_line_width: float = board_diameter / 500.
+        t = self.construction_geometry_line_width
         self.construction_geometry_dashes: str = f"{t * 4} {t * 2} {t} {t * 2}"
         self.outline_color = "#D0D2CD"
-        self.outline_thickness = board_diameter / 300
+        self.outline_line_width = board_diameter / 300
         self.copper_layers_color = {
             'top': "#C83434",
             'bottom': "#4D7FC4",
@@ -567,7 +617,7 @@ class Config:
         }
         self.top_silk_color = "#EEEFA4"
         self.bottom_silk_color = "#E6B2A4"
-        self.silk_thickness = board_diameter / 300
+        self.silk_line_width = board_diameter / 300
         self.silk_font_family = "Arial, sans-serif"
         self.via_color = "#ECECEC"
         self.via_hole_color = "#E3B72E"
@@ -576,7 +626,7 @@ class Config:
         self.terminal_hole_color = self.background_color
         self.terminal_opacity = 1.0
         self.magnets_color = "#F0F0F0"
-        self.magnets_thickness = board_diameter / 200
+        self.magnets_line_width = board_diameter / 200
         self.magnets_opacity = 1.0
         self.magnets_dashes = "none"
         self.svg_font_size_factor = 1.5

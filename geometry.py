@@ -27,26 +27,26 @@ class SVGStyle:
     point_color: str = "#C02020"
     point_opacity: float = 0.7
     point_radius: float = 0.15
-    point_thickness: float = 0.05
+    point_width: float = 0.05
 
     line_color: str = "#37C837"
     line_opacity: float = 0.7
-    line_thickness: float = 0.05
+    line_width: float = 0.05
     line_dashes: str = "0.2 0.12"
 
     circle_color: str = "#37C837"
     circle_opacity: float = 0.7
-    circle_thickness: float = 0.05
+    circle_line_width: float = 0.05
     circle_dashes: str = "0.2 0.12"
 
     arc_color: str = "#37C837"
     arc_opacity: float = 0.7
-    arc_thickness: float = 0.05
+    arc_line_width: float = 0.05
     arc_dashes = "0.2 0.12"
 
     path_color: str = "#37C837"
     path_opacity: float = 0.7
-    path_thickness: float = 0.05
+    path_line_width: float = 0.05
     path_dashes = "0.2 0.12"
 
 style = SVGStyle()
@@ -282,7 +282,7 @@ class Point(Vector, DrawableObject):
         p = self.to_viewport()
         return f"{round(p.x, PRECISION)},{round(p.y, PRECISION)}"
     
-    def draw_svg(self, drawing: svg.Drawing, parent: svg.base.BaseElement, radius=None, color=None, opacity=None, thickness=None):
+    def draw_svg(self, drawing: svg.Drawing, parent: svg.base.BaseElement, radius=None, color=None, opacity=None, width=None):
         """Draw this Point on the given SVG drawing
         
         This method returns self and can therefore be chained."""
@@ -290,7 +290,7 @@ class Point(Vector, DrawableObject):
             radius or style.point_radius,
             stroke = color or style.point_color,
             stroke_opacity = opacity or style.point_opacity,
-            stroke_width = thickness or style.point_thickness,
+            stroke_width = width or style.point_width,
         ))
         return self
 
@@ -462,7 +462,7 @@ class Line(DrawableObject):
             print("Warning: calling eval() on an horizontal Line")
         return self.a * y + self.b
     
-    def draw_svg(self, drawing: svg.Drawing, parent: svg.base.BaseElement, color=None, opacity=None, thickness=None, dashes=None):
+    def draw_svg(self, drawing: svg.Drawing, parent: svg.base.BaseElement, color=None, opacity=None, line_width=None, dashes=None):
         """Draw this Line on the given SVG drawing
         
         This method returns self and can therefore be chained."""
@@ -487,7 +487,7 @@ class Line(DrawableObject):
             p1, p2,
             stroke = color or style.line_color,
             stroke_opacity = opacity or style.line_opacity,
-            stroke_width = thickness or style.line_thickness,
+            stroke_width = line_width or style.line_width,
             stroke_dasharray = dashes or style.line_dashes,
         ))
         return self
@@ -625,7 +625,7 @@ class Segment(DrawableObject):
         radius = center.distance(p1)
         return Arc(p1, p2, radius, cross_product > 0)
     
-    def draw_svg(self, drawing: svg.Drawing, parent: svg.base.BaseElement, color=None, opacity=None, thickness=None, dashes=None):
+    def draw_svg(self, drawing: svg.Drawing, parent: svg.base.BaseElement, color=None, opacity=None, line_width=None, dashes=None):
         """Draw this Segment on the given SVG drawing
         
         This method returns self and can therefore be chained."""
@@ -634,7 +634,7 @@ class Segment(DrawableObject):
             self.p1.to_viewport().as_tuple(), self.p2.to_viewport().as_tuple(),
             stroke = color or style.line_color,
             stroke_opacity = opacity or style.line_opacity,
-            stroke_width = thickness or style.line_thickness,
+            stroke_width = line_width or style.line_width,
             stroke_dasharray = dashes or style.line_dashes,
         ))
         return self
@@ -721,7 +721,7 @@ class Circle(DrawableObject):
             return None
         return Circle(self.center, radius)
     
-    def draw_svg(self, drawing: svg.Drawing, parent: svg.base.BaseElement, color=None, opacity=None, thickness=None, dashes=None):
+    def draw_svg(self, drawing: svg.Drawing, parent: svg.base.BaseElement, color=None, opacity=None, line_width=None, dashes=None):
         """Draw this Circle on the given SVG drawing
         
         This method returns self and can therefore be chained."""
@@ -731,7 +731,7 @@ class Circle(DrawableObject):
             self.radius,
             stroke = color or style.circle_color,
             stroke_opacity = opacity or style.circle_opacity,
-            stroke_width = thickness or style.circle_thickness,
+            stroke_width = line_width or style.circle_line_width,
             stroke_dasharray = dashes or style.circle_dashes,
         ))
         return self
@@ -930,7 +930,7 @@ class Arc(DrawableObject):
         radius = center.distance(p1)
         return Arc(p1, p2, radius, cross_product > 0)
     
-    def draw_svg(self, drawing: svg.Drawing, parent: svg.base.BaseElement, color=None, opacity=None, thickness=None, dashes=None):
+    def draw_svg(self, drawing: svg.Drawing, parent: svg.base.BaseElement, color=None, opacity=None, line_width=None, dashes=None):
         """Draw this Arc on the given SVG drawing
         
         This method returns self and can therefore be chained."""
@@ -939,7 +939,7 @@ class Arc(DrawableObject):
             d=f"M{self.p1.to_svg()} A{round(self.radius, PRECISION)},{round(self.radius, PRECISION)} 0 0,1 {self.p2.to_svg()}",
             stroke = color or style.arc_color,
             stroke_opacity = opacity or style.arc_opacity,
-            stroke_width = thickness or style.arc_thickness,
+            stroke_width = line_width or style.arc_line_width,
             stroke_dasharray = dashes or style.arc_dashes,
         ))
         return self
@@ -1208,6 +1208,9 @@ class PathSegment(PathElement):
     def mirrored_y(self) -> Self:
         """Create a copy of this PathSegment mirrored about the Y axis"""
         return PathSegment(self.p2.mirrored_y(), self.tag)
+    
+    def geometry(self, p1: Point) -> Segment:
+        return Segment(p1, self.p2)
 
 class PathArc(PathElement):
     """An arc segment as part of a Path"""
@@ -1232,6 +1235,9 @@ class PathArc(PathElement):
     def mirrored_y(self) -> Self:
         """Create a copy of this PathArc mirrored about the Y axis"""
         return PathArc(self.p2.mirrored_y(), self.radius, not self.anticlockwise, self.tag)
+    
+    def geometry(self, p1: Point) -> Arc:
+        return Arc(p1, self.p2, self.radius, self.anticlockwise)
 
 class Path(DrawableObject):
     """A Path consisting of a list of connected segments and arcs"""
@@ -1399,15 +1405,7 @@ class Path(DrawableObject):
         return self.elements[0]
     
     def first_geometry(self) -> Segment|Arc:
-        first = self.elements[0]
-        p1 = self.start_point
-        p2 = first.p2
-        match first:
-            case PathSegment():
-                return Segment(p1, p2)
-
-            case PathArc():
-                return Arc(p1, p2, first.radius, first.anticlockwise)
+        return self.elements[0].geometry(self.start_point)
     
     def pop_first(self) -> PathElement:
         first = self.elements.pop(0)
@@ -1418,15 +1416,7 @@ class Path(DrawableObject):
         return self.elements[-1]
     
     def last_geometry(self) -> Segment|Arc:
-        last = self.elements[-1]
-        p1 = self.elements[-2].p2
-        p2 = last.p2
-        match last:
-            case PathSegment():
-                return Segment(p1, p2)
-
-            case PathArc():
-                return Arc(p1, p2, last.radius, last.anticlockwise)
+        return self.elements[-1].geometry(self.elements[-2].p2)
     
     def pop(self) -> PathElement:
         return self.elements.pop()
@@ -1478,7 +1468,7 @@ class Path(DrawableObject):
             parent: svg.base.BaseElement,
             color: str =None,
             opacity: float = None,
-            thickness: float = None,
+            line_width: float = None,
             dashes: str = None,
             label: str = None,
         ):
@@ -1490,7 +1480,7 @@ class Path(DrawableObject):
             d = self.to_svg(),
             stroke = color or style.path_color,
             stroke_opacity = opacity or style.path_opacity,
-            stroke_width = thickness or style.path_thickness,
+            stroke_width = line_width or style.path_line_width,
             stroke_dasharray = dashes or style.path_dashes,
             label = label,
         ))
