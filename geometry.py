@@ -64,10 +64,22 @@ def tan(x: float) -> float:
     return math.tan(math.radians(x))
 
 def asin(x: float) -> float:
-    return math.degrees(math.asin(x))
+    # Prevent out-of-domain errors due to float rounding errors
+    if math.isclose(x, -1, abs_tol=1e-9):
+        return -math.pi / 2.0
+    elif math.isclose(x, 1, abs_tol=1e-9):
+        return math.pi / 2.0
+    else:
+        return math.degrees(math.asin(x))
 
 def acos(x: float) -> float:
-    return math.degrees(math.acos(x))
+    # Prevent out-of-domain errors due to float rounding errors
+    if math.isclose(x, -1, abs_tol=1e-9):
+        return math.pi
+    elif math.isclose(x, 1, abs_tol=1e-9):
+        return 0
+    else:
+        return math.degrees(math.acos(x))
 
 def atan(x: float) -> float:
     return math.degrees(math.atan(x))
@@ -677,7 +689,12 @@ class Circle(DrawableObject):
                         print("Warning: trying to compute intersection between non-intersecting circles")
                     return None
                 a = (self.radius**2 - object.radius**2 + distance**2) / (2.0 * distance)
-                h = math.sqrt(self.radius**2 - a**2)
+                x = self.radius**2 - a**2
+                if math.isclose(x, 0, abs_tol=1e-9):
+                    # Prevent out-of-domain errors due to float rounding errors
+                    h = 0
+                else:
+                    h = math.sqrt(self.radius**2 - a**2)
                 x0 = self.center.x + a * (object.center.x - self.center.x) / distance
                 y0 = self.center.y + a * (object.center.y - self.center.y) / distance
                 x1 = x0 + h * (object.center.y - self.center.y) / distance
@@ -747,7 +764,8 @@ class Arc(DrawableObject):
         distance = p1.distance(p2)
         min_radius = distance / 2.0
         if radius < min_radius:
-            print(f"Warning : trying to create an Arc with a radius (r={radius}) too small for the distance between the two points (d={distance}), setting radius to {min_radius}")
+            if not math.isclose(radius, min_radius, abs_tol=1e-9):
+                print(f"Warning : trying to create an Arc with a radius (r={radius}) too small for the distance between the two points (d={distance}), setting radius to {min_radius}")
             radius = min_radius
         if reverse:
             p1, p2 = p2, p1
