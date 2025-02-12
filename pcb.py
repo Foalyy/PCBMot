@@ -1,11 +1,11 @@
 from typing import Self
 from enum import Enum
-from config import Config, BoardShape, TerminalType
+from .config import Config, BoardShape, TerminalType
 import svgwrite as svg
 import math, json
-from geometry import sin, cos, tan, asin, acos, atan, atan2
-from geometry import DrawableObject, Vector, Point, Line, Segment, Circle, Arc, PathSegment, PathArc, Path
-from kicad import KicadPCB
+from .geometry import sin, cos, tan, asin, acos, atan, atan2
+from .geometry import DrawableObject, Vector, Point, Line, Segment, Circle, Arc, PathSegment, PathArc, Path
+from .kicad import KicadPCB
 
 def calculate_resistance(config: Config, length: float, width: float, thickness: float):
     """Calculate the resistance of a copper trace of the given geometry based on the physical parameters in the config"""

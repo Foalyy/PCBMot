@@ -40,9 +40,13 @@ class Config:
             'name': 'board_shape',
             'json': 'board.board_shape',
             'type': BoardShape,
-            'handler': lambda s : {
+            'decoder': lambda s : {
                 'circle': BoardShape.CIRCLE,
                 'square': BoardShape.SQUARE,
+            }[s],
+            'encoder': lambda s : {
+                BoardShape.CIRCLE: 'circle',
+                BoardShape.SQUARE: 'square',
             }[s],
             'enum': ['circle', 'square'],
             'default': 'circle',
@@ -297,11 +301,17 @@ class Config:
             'name': 'terminal_type',
             'json': 'terminals.terminal_type',
             'type': TerminalType,
-            'handler': lambda s : {
+            'decoder': lambda s : {
                 'none': TerminalType.NONE,
                 'through_hole': TerminalType.THROUGH_HOLE,
                 'smd': TerminalType.SMD,
                 'castellated': TerminalType.CASTELLATED,
+            }[s],
+            'encoder': lambda s : {
+                TerminalType.NONE: 'none',
+                TerminalType.THROUGH_HOLE: 'through_hole',
+                TerminalType.SMD: 'smd',
+                TerminalType.CASTELLATED: 'castellated',
             }[s],
             'enum': ['none', 'through_hole', 'smd', 'castellated'],
             'default': 'through_hole',
@@ -635,9 +645,9 @@ class Config:
         """Read and parse the given file as JSON, and return a Config"""
         with open(filename, 'r') as f:
             cfg = json.load(f)
-        return Config.parse(cfg)
+        return Config.from_dict(cfg)
     
-    def parse(cfg: dict) -> Self:
+    def from_dict(cfg: dict) -> Self:
         """Parse the given dict and return it as a Config"""
         args = {}
         for option in Config.options:
@@ -659,9 +669,9 @@ class Config:
             if 'enum' in option and value not in option['enum']:
                 available_values_str = f", valid values are : {', '.join(map(lambda x: f"'{x}'", option['enum']))}"
                 raise ValueError(f"Invalid value '{value}' for config option '{option['json']}' (type : {option['type'].__name__}){available_values_str}")
-            if 'handler' in option:
+            if 'decoder' in option:
                 try:
-                    value = option['handler'](value)
+                    value = option['decoder'](value)
                 except KeyError:
                     available_values_str = ''
                     if 'enum' in option:
@@ -679,3 +689,21 @@ class Config:
                     raise ValueError(f"Invalid value '{value}' for config option '{option['json']}' (type : {option['type'].__name__})")
             args[option['name']] = value
         return Config(**args)
+    
+    def as_dict(self) -> dict:
+        cfg = {}
+        for option in Config.options:
+            cfg_parent = cfg
+            path = option['json'].split('.')
+            for i in range(len(path) - 1):
+                if not path[i] in cfg_parent:
+                    cfg_parent[path[i]] = {}
+                cfg_parent = cfg_parent[path[i]]
+            value = getattr(self, option['name'])
+            if 'encoder' in option:
+                value = option['encoder'](value)
+            cfg_parent[option['name']] = value
+        return cfg
+    
+    def to_json(self) -> str:
+        return json.dumps(self.as_dict(), indent=4)

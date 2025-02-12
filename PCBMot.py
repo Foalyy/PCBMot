@@ -1,8 +1,8 @@
 from typing import Self
-from inkscape_drawing import InkscapeDrawing
-from config import Config, BoardShape, TerminalType
-from pcb import PCB, PCBStats
-from kicad import KicadPCB
+from .inkscape_drawing import InkscapeDrawing
+from .config import Config, BoardShape, TerminalType
+from .pcb import PCB, PCBStats
+from .kicad import KicadPCB
 import argparse, sys
 
 

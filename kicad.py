@@ -1,8 +1,8 @@
 from sexpdata import dump, Symbol as S
 from datetime import datetime
 import uuid
-from geometry import Vector, Point, Segment, Arc, Path, PathSegment, PathArc
-from version import PCBMOT_VERSION
+from .geometry import Vector, Point, Segment, Arc, Path, PathSegment, PathArc
+from .version import PCBMOT_VERSION
 
 class KicadPCB:
     def __init__(self, filename, config):
