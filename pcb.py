@@ -447,6 +447,7 @@ class Coil:
         # If the outer vias are used, calculate the best outer fillet radius of the outermost coil turn to fit the via
         # Twice the trace width is a sane value to start for any track width
         outer_fillet_radius = config.trace_width * 2
+        outer_arc_radius_offset = 0
         if CoilConnection.OUTSIDE_OUTER_RIGHT_VIA in outside_vias or CoilConnection.OUTSIDE_OUTER_LEFT_VIA in outside_vias:
             outer_fillet_radius, outer_arc_radius_offset, success = Coil._compute_fillet(
                 arc_radius = outer_radius,
@@ -456,6 +457,7 @@ class Coil:
                 via = outside_vias[CoilConnection.OUTSIDE_OUTER_RIGHT_VIA],
                 trace_width = config.trace_width,
                 trace_spacing = config.trace_spacing,
+                config = config,
                 construction_geometry = construction_geometry,
             )
             if not success:
@@ -470,6 +472,7 @@ class Coil:
             via = outside_vias[CoilConnection.OUTSIDE_INNER_RIGHT_VIA],
             trace_width = config.trace_width,
             trace_spacing = config.trace_spacing,
+            config = config,
             construction_geometry = construction_geometry,
         )
         if not success:
@@ -820,10 +823,11 @@ class Coil:
             via: Via,
             trace_width: float,
             trace_spacing: float,
+            config: Config,
             construction_geometry = None
         ) -> tuple[float, bool]:
         arc_radius_offset = 0
-        while arc_radius_offset < via.diameter:
+        while arc_radius_offset < via.diameter + max(-config.inner_vias_offset, 0):
             radius = initial_fillet_radius
             arc = Arc(Point.polar(-angle/2.0, (arc_radius + arc_radius_offset)), Point.polar(angle/2.0, (arc_radius + arc_radius_offset)), (arc_radius + arc_radius_offset))
             segment_base = Segment(Point.polar(angle/2.0, opposite_radius), Point.polar(angle/2.0, (arc_radius + arc_radius_offset)))
@@ -1046,6 +1050,7 @@ class Outline:
         if self.board_chamfer is None:
             self.board_chamfer = 0
         self.board_chamfer = min(self.board_chamfer, self.board_diameter / 2.0)
+        self.mountpoints = config.mountpoints
         self.n_mountpoints = config.n_mountpoints
         self.mountpoints_position_radius = config.mountpoints_position_radius
         self.mountpoints_diameter = config.mountpoints_diameter
@@ -1118,7 +1123,7 @@ class Outline:
         ))
 
         # Draw the mountpoints
-        if self.n_mountpoints is not None:
+        if self.mountpoints and self.n_mountpoints is not None:
             for i in range(self.n_mountpoints):
                 center = Point.polar((i + 0.5) * 360 / self.n_mountpoints, self.mountpoints_position_radius)
                 parent.add(drawing.circle(
@@ -1170,7 +1175,7 @@ class Outline:
         )
 
         # Draw the mountpoints
-        if self.n_mountpoints is not None:
+        if self.mountpoints and self.n_mountpoints is not None:
             for i in range(self.n_mountpoints):
                 center = Point.polar((i + 0.5) * 360 / self.n_mountpoints, self.mountpoints_position_radius)
                 kicadpcb.gr_circle(
@@ -1203,8 +1208,8 @@ class PCBStats:
         coil_length: float,
         coil_radial_length: float,
         coil_resistance: float,
-        phases_length: float,
-        phases_resistance: float,
+        phases_length: dict[int, float],
+        phases_resistance: dict[int, float],
         n_magnets: int,
         magnets_diameter: float,
     ):
@@ -1231,16 +1236,16 @@ class PCBStats:
         """Return the stats as a JSON-formatted string"""
         return json.dumps({
             'coil_turns': self.coil_turns,
-            'coil_length': self.coil_length,
-            'coil_radial_length': self.coil_radial_length,
-            'coil_radial_length_ratio': self.coil_radial_length_ratio,
-            'coil_resistance': self.coil_resistance,
+            'coil_length': round(self.coil_length, 1),
+            'coil_radial_length': round(self.coil_radial_length, 1),
+            'coil_radial_length_ratio': round(self.coil_radial_length_ratio, 3),
+            'coil_resistance': round(self.coil_resistance, 3),
             'phases_length': self.phases_length,
-            'average_phase_length': self.average_phase_length,
+            'average_phase_length': round(self.average_phase_length, 1),
             'phases_resistance': self.phases_resistance,
-            'average_phase_resistance': self.average_phase_resistance,
+            'average_phase_resistance': round(self.average_phase_resistance, 3),
             'n_magnets': self.n_magnets,
-            'magnets_diameter': self.magnets_diameter,
+            'magnets_diameter': round(self.magnets_diameter, 1),
         }, indent=4)
     
     def write(self, destination: str):
@@ -1907,8 +1912,8 @@ class PCB:
                     phases_resistance[phase] = resistance
             else:
                 for phase in range(config.n_phases):
-                    phases_length = coil_length
-                    phases_resistance = coil_resistance + config.n_layers * config.via_resistance
+                    phases_length[phase] = coil_length
+                    phases_resistance[phase] = coil_resistance + config.n_layers * config.via_resistance
             stats = PCBStats(
                 coil_turns = coil_turns,
                 coil_length = coil_length,

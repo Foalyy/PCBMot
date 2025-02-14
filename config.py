@@ -125,6 +125,12 @@ class Config:
 
         # Board / mountpoints
         {
+            'name': 'mountpoints',
+            'json': 'board.mountpoints.mountpoints',
+            'type': bool,
+            'default': False,
+        },
+        {
             'name': 'n_mountpoints',
             'json': 'board.mountpoints.n_mountpoints',
             'type': int,
@@ -194,6 +200,20 @@ class Config:
             'nullable': True,
             'default': None,
         },
+        {
+            'name': 'coil_names_font_size',
+            'json': 'coils.coil_names_font_size',
+            'type': float,
+            'nullable': True,
+            'default': None,
+        },
+        {
+            'name': 'coil_names_offset',
+            'json': 'coils.coil_names_offset',
+            'type': float,
+            'nullable': True,
+            'default': None,
+        },
 
         # Coils / series link
         {
@@ -227,20 +247,6 @@ class Config:
             'json': 'coils.series_link.series_link_outer_offset',
             'type': float,
             'default': 0.0,
-        },
-        {
-            'name': 'coil_names_font_size',
-            'json': 'coils.coil_names_font_size',
-            'type': float,
-            'nullable': True,
-            'default': None,
-        },
-        {
-            'name': 'coil_names_offset',
-            'json': 'coils.coil_names_offset',
-            'type': float,
-            'nullable': True,
-            'default': None,
         },
 
         # Coils / COM link
@@ -422,6 +428,7 @@ class Config:
         hole_diameter: float,
         board_chamfer: float,
         board_fillet: float,
+        mountpoints: bool,
         n_mountpoints: int,
         mountpoints_position_radius: float,
         mountpoints_diameter: float,
@@ -505,6 +512,7 @@ class Config:
         self.hole_diameter: float = hole_diameter
         self.board_chamfer: float = board_chamfer
         self.board_fillet: float = board_fillet
+        self.mountpoints: bool = mountpoints
         self.n_mountpoints: int = n_mountpoints
         self.mountpoints_position_radius: float = mountpoints_position_radius
         self.mountpoints_diameter: float = mountpoints_diameter
@@ -563,8 +571,11 @@ class Config:
         self.n_coils: int = self.n_phases * self.n_slots_per_phase
         if self.max_turns_per_layer is None:
             self.max_turns_per_layer: float = 1000
+        max_coil_angle = 360.0 / self.n_coils
         if self.coil_angle is None:
-            self.coil_angle: float = 360.0 / self.n_coils
+            self.coil_angle: float = max_coil_angle
+        else:
+            self.coil_angle: float = min(max_coil_angle, coil_angle)
         match n_layers:
             case 2:
                 self.copper_layers = ['top', 'bottom']
