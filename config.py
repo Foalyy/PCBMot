@@ -690,9 +690,8 @@ class Config:
                     cfg_parent[path[i]] = {}
                 cfg_parent = cfg_parent[path[i]]
             if option.get('auto', False) and option['name'] in self.auto_parameters:
-                value = 'auto'
-            else:
-                value = getattr(self, option['name'])
+                cfg_parent[option['name'] + '_auto'] = True
+            value = getattr(self, option['name'])
             if 'encoder' in option:
                 value = option['encoder'](value)
             cfg_parent[option['name']] = value
