@@ -300,6 +300,7 @@ class Config:
             'name': 'outer_vias_offset',
             'json': 'vias.outer_vias_offset',
             'type': float,
+            'signed': True,
             'zero': True,
             'default': 0.0,
         },
@@ -307,6 +308,15 @@ class Config:
             'name': 'inner_vias_offset',
             'json': 'vias.inner_vias_offset',
             'type': float,
+            'signed': True,
+            'zero': True,
+            'default': 0.0,
+        },
+        {
+            'name': 'inside_vias_offset',
+            'json': 'vias.inside_vias_offset',
+            'type': float,
+            'signed': True,
             'zero': True,
             'default': 0.0,
         },
@@ -568,10 +578,6 @@ class Config:
 
         # Total number of coils
         self.n_coils: int = self.n_phases * self.n_slots_per_phase
-
-        # Turns per layer set to a value high enough for any practical purposes
-        if self.turns_per_layer == 'auto':
-            self.turns_per_layer: float = 1000
         
         # Coil angle limited by the the number of coils, and set to the max by default
         max_coil_angle = 360.0 / self.n_coils
