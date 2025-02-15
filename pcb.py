@@ -1617,10 +1617,11 @@ class PCB:
                 terminals.append(terminal)
             if config.link_series_coils:
                 if config.link_com:
-                    terminal = terminal_base.rotated(board_center, - 360.0 / config.n_coils)
-                    terminal.label = f"Terminal_COM"
-                    terminal.pad_name = f"COM"
-                    terminals.append(terminal)
+                    if config.generate_com_terminal:
+                        terminal = terminal_base.rotated(board_center, - 360.0 / config.n_coils)
+                        terminal.label = f"Terminal_COM"
+                        terminal.pad_name = f"COM"
+                        terminals.append(terminal)
                 else:
                     for i in range(config.n_phases):
                         terminal = terminal_base.rotated(board_center, 360.0 * -(i + 1) / config.n_coils)

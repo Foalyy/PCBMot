@@ -367,6 +367,12 @@ class Config:
             'zero': True,
             'default': 0.0,
         },
+        {
+            'name': 'generate_com_terminal',
+            'json': 'terminals.generate_com_terminal',
+            'type': bool,
+            'default': True,
+        },
 
         # Magnets
         {
