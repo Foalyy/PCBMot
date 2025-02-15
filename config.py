@@ -20,6 +20,8 @@ class Config:
             'name': 'temperature',
             'json': 'general.temperature',
             'type': float,
+            'signed': True,
+            'zero': True,
             'default': 20.0, # °C
         },
         {
@@ -67,15 +69,15 @@ class Config:
             'name': 'board_chamfer',
             'json': 'board.board_chamfer',
             'type': float,
-            'nullable': True,
-            'default': None,
+            'zero': True,
+            'default': 0,
         },
         {
             'name': 'board_fillet',
             'json': 'board.board_fillet',
             'type': float,
-            'nullable': True,
-            'default': None,
+            'zero': True,
+            'default': 0,
         },
         {
             'name': 'board_thickness',
@@ -94,20 +96,26 @@ class Config:
             'name': 'board_outer_margin',
             'json': 'board.board_outer_margin',
             'type': float,
-            'nullable': True,
-            'default': None,
+            'signed': True,
+            'zero': True,
+            'auto': True,
+            'default': 'auto',
         },
         {
             'name': 'board_inner_margin',
             'json': 'board.board_inner_margin',
             'type': float,
-            'nullable': True,
-            'default': None,
+            'signed': True,
+            'zero': True,
+            'auto': True,
+            'default': 'auto',
         },
         {
             'name': 'rotation',
             'json': 'board.rotation',
             'type': float,
+            'signed': True,
+            'zero': True,
             'default': 0.0,
         },
         {
@@ -126,7 +134,7 @@ class Config:
         # Board / mountpoints
         {
             'name': 'mountpoints',
-            'json': 'board.mountpoints.mountpoints',
+            'json': 'board.mountpoints.generate_mountpoints',
             'type': bool,
             'default': False,
         },
@@ -134,25 +142,26 @@ class Config:
             'name': 'n_mountpoints',
             'json': 'board.mountpoints.n_mountpoints',
             'type': int,
-            'default': 0,
+            'default': 4,
         },
         {
             'name': 'mountpoints_position_radius',
             'json': 'board.mountpoints.mountpoints_position_radius',
             'type': float,
-            'default': 0.0,
+            'auto': True,
+            'default': 'auto',
         },
         {
             'name': 'mountpoints_diameter',
             'json': 'board.mountpoints.mountpoints_diameter',
             'type': float,
-            'default': 0.0,
+            'default': 3.0,
         },
         {
             'name': 'mountpoints_marking_diameter',
             'json': 'board.mountpoints.mountpoints_marking_diameter',
             'type': float,
-            'default': 0.0,
+            'default': 5.0,
         },
 
         # Coils
@@ -184,8 +193,8 @@ class Config:
             'name': 'coil_angle',
             'json': 'coils.coil_angle',
             'type': float,
-            'nullable': True,
-            'default': None,
+            'auto': True,
+            'default': 'auto',
         },
         {
             'name': 'four_layers_inner_vias',
@@ -194,25 +203,26 @@ class Config:
             'default': False,
         },
         {
-            'name': 'max_turns_per_layer',
-            'json': 'coils.max_turns_per_layer',
+            'name': 'turns_per_layer',
+            'json': 'coils.turns_per_layer',
             'type': int,
-            'nullable': True,
-            'default': None,
+            'auto': True,
+            'default': 'auto',
         },
         {
             'name': 'coil_names_font_size',
             'json': 'coils.coil_names_font_size',
             'type': float,
-            'nullable': True,
-            'default': None,
+            'auto': True,
+            'default': 'auto',
         },
         {
             'name': 'coil_names_offset',
             'json': 'coils.coil_names_offset',
             'type': float,
-            'nullable': True,
-            'default': None,
+            'zero': True,
+            'auto': True,
+            'default': 'auto',
         },
 
         # Coils / series link
@@ -226,26 +236,28 @@ class Config:
             'name': 'series_link_inner_trace_width',
             'json': 'coils.series_link.series_link_inner_trace_width',
             'type': float,
-            'nullable': True,
-            'default': None,
+            'auto': True,
+            'default': 'auto',
         },
         {
             'name': 'series_link_outer_trace_width',
             'json': 'coils.series_link.series_link_outer_trace_width',
             'type': float,
-            'nullable': True,
-            'default': None,
+            'auto': True,
+            'default': 'auto',
         },
         {
             'name': 'series_link_inner_offset',
             'json': 'coils.series_link.series_link_inner_offset',
             'type': float,
+            'zero': True,
             'default': 0.0,
         },
         {
             'name': 'series_link_outer_offset',
             'json': 'coils.series_link.series_link_outer_offset',
             'type': float,
+            'zero': True,
             'default': 0.0,
         },
 
@@ -260,13 +272,14 @@ class Config:
             'name': 'com_link_trace_width',
             'json': 'coils.com_link.com_link_trace_width',
             'type': float,
-            'nullable': True,
-            'default': None,
+            'auto': True,
+            'default': 'auto',
         },
         {
             'name': 'com_link_offset',
             'json': 'coils.com_link.com_link_offset',
             'type': float,
+            'zero': True,
             'default': 0.0,
         },
 
@@ -287,18 +300,21 @@ class Config:
             'name': 'outer_vias_offset',
             'json': 'vias.outer_vias_offset',
             'type': float,
+            'zero': True,
             'default': 0.0,
         },
         {
             'name': 'inner_vias_offset',
             'json': 'vias.inner_vias_offset',
             'type': float,
+            'zero': True,
             'default': 0.0,
         },
         {
             'name': 'via_resistance',
             'json': 'vias.via_resistance',
             'type': float,
+            'zero': True,
             'default': 0.0, # Ohm
         },
 
@@ -338,6 +354,7 @@ class Config:
             'name': 'terminal_offset',
             'json': 'terminals.terminal_offset',
             'type': float,
+            'zero': True,
             'default': 0.0,
         },
 
@@ -346,15 +363,15 @@ class Config:
             'name': 'magnets_diameter',
             'json': 'magnets.magnets_diameter',
             'type': float,
-            'nullable': True,
-            'default': None,
+            'auto': True,
+            'default': 'auto',
         },
         {
             'name': 'magnets_position_radius',
             'json': 'magnets.magnets_position_radius',
             'type': float,
-            'nullable': True,
-            'default': None,
+            'auto': True,
+            'default': 'auto',
         },
 
         # Display
@@ -386,7 +403,7 @@ class Config:
             'name': 'draw_only_layers',
             'json': 'display.draw_only_layers',
             'type': list,
-            'nullable': True,
+            'null': True,
             'default': None,
         },
         {
@@ -418,165 +435,106 @@ class Config:
         },
     ]
 
-    def __init__(
-        self,
-        temperature: float,
-        copper_resistivity: float,
-        copper_temperature_coefficient: float,
-        board_shape: BoardShape,
-        board_diameter: float,
-        hole_diameter: float,
-        board_chamfer: float,
-        board_fillet: float,
-        mountpoints: bool,
-        n_mountpoints: int,
-        mountpoints_position_radius: float,
-        mountpoints_diameter: float,
-        mountpoints_marking_diameter: float,
-        board_thickness: float,
-        board_outer_margin: float,
-        board_inner_margin: float,
-        rotation: float,
-        inner_layers_copper_thickness: float,
-        outer_layers_copper_thickness: float,
-        n_phases: int,
-        four_layers_inner_vias: bool,
-        n_slots_per_phase: int,
-        coil_angle: float,
-        n_layers: int,
-        max_turns_per_layer: int,
-        trace_width: float,
-        trace_spacing: float,
-        via_diameter: float,
-        via_drill_diameter: float,
-        outer_vias_offset: float,
-        inner_vias_offset: float,
-        via_resistance: float,
-        terminal_type: TerminalType,
-        terminal_diameter: float,
-        terminal_hole_diameter: float,
-        terminal_offset: float,
-        link_series_coils: bool,
-        series_link_inner_trace_width: float,
-        series_link_outer_trace_width: float,
-        series_link_inner_offset: float,
-        series_link_outer_offset: float,
-        link_com: bool,
-        com_link_trace_width: float,
-        com_link_offset: float,
-        coil_names_font_size: float,
-        coil_names_offset: float,
-        magnets_diameter: float,
-        magnets_position_radius: float,
-        draw_vias: bool,
-        draw_terminals: bool,
-        draw_outline: bool,
-        draw_construction_geometry: bool,
-        draw_only_layers: list[str],
-        draw_magnets: bool,
-        draw_coil_names: bool,
-        svg_profile: str,
-        svg_scale: int,
-    ):
-        # Check parameters
-        if board_diameter <= 0:
-            raise ValueError("The board diameter must be positive")
-        if hole_diameter <= 0:
-            raise ValueError("The hole diameter must be positive")
-        if hole_diameter >= board_diameter:
+    def __init__(self, cfg: dict):
+        """Parse the given dict containing settings and return it as a Config"""
+
+        self.auto_parameters = []
+        for option in Config.options:
+            # Get the value for this option in the dict structure
+            value = cfg
+            path = []
+            for item in option['json'].split('.'):
+                path.append(item)
+                try:
+                    value = value[item]
+                except TypeError:
+                    raise ValueError(f"Invalid value '{value}' for config option {'.'.join(path[:-1])}")
+                except KeyError:
+                    if option.get('required', False):
+                        raise ValueError(f"Config option '{option['json']}' is required (type : {option['type'].__name__})")
+                    else:
+                        try:
+                            value = option['default']
+                            break
+                        except KeyError:
+                            raise ValueError(f"Config option '{option['json']}' is not required but doesn't have a default value")
+            
+            # Check if the value is allowed to be 'null'
+            if not option.get('null', False) and value is None:
+                raise ValueError(f"Invalid value 'null' for config option '{option['json']}' (type : {option['type'].__name__})")
+            
+            # Check if the value is allowed to be 'auto'
+            if value == 'auto':
+                if option.get('auto', False):
+                    # Keep track of parameters set to 'auto'
+                    self.auto_parameters.append(option['name'])
+                else:
+                    raise ValueError(f"Invalid value 'auto' for config option '{option['json']}' (type : {option['type'].__name__})")
+
+            # Check value for enum types
+            if 'enum' in option and value not in option['enum']:
+                raise ValueError(f"Invalid value '{value}' for config option '{option['json']}' (type : {option['type'].__name__}), valid values are : {', '.join(map(lambda x: f"'{x}'", option['enum']))}")
+
+            # If a decoder handler is specified for this option, execute it
+            if 'decoder' in option:
+                try:
+                    value = option['decoder'](value)
+                except KeyError:
+                    available_values_str = ''
+                    if 'enum' in option:
+                        available_values_str = f", valid values are : {', '.join(map(lambda x: f"'{x}'", option['enum']))}"
+                    raise ValueError(f"Invalid value '{value}' for config option '{option['json']}' (type : {option['type'].__name__}){available_values_str}")
+            
+            # If a real value is given (not 'null' or 'auto'), check it against its type
+            if value is not None and value != 'auto':
+                try:
+                    # Float
+                    if option['type'] is float:
+                        value = float(value)
+
+                        # Negative and zero values are not allowed by default
+                        if not option.get('signed', False) and value < 0:
+                            raise ValueError(f"Invalid value negative '{value}' for config option '{option['json']}' (type : {option['type'].__name__})")
+                        if not option.get('zero', False) and math.isclose(value, 0, abs_tol=1e-9):
+                            raise ValueError(f"Invalid null value '{value}' for config option '{option['json']}' (type : {option['type'].__name__})")
+                    
+                    # Int
+                    elif option['type'] is int:
+                        value = int(value)
+
+                        # Negative and zero values are not allowed by default
+                        if not option.get('signed', False) and value < 0:
+                            raise ValueError(f"Invalid value negative '{value}' for config option '{option['json']}' (type : {option['type'].__name__})")
+                        if not option.get('zero', False) and value == 0:
+                            raise ValueError(f"Invalid null value '{value}' for config option '{option['json']}' (type : {option['type'].__name__})")
+                    
+                    # Bool
+                    elif option['type'] is bool:
+                        value = bool(value)
+
+                except (ValueError, TypeError):
+                    raise ValueError(f"Invalid value '{value}' for config option '{option['json']}' (type : {option['type'].__name__})")
+            
+            # Save this option directly in the Config object
+            setattr(self, option['name'], value)
+
+
+        ## Other specific checks on some options
+        
+        if self.hole_diameter >= self.board_diameter:
             raise ValueError("The board diameter is smaller than the hole diameter")
-        if not (n_slots_per_phase >= 1 and (n_slots_per_phase == 1 or n_slots_per_phase % 2 == 0)):
+        
+        if not (self.n_slots_per_phase >= 1 and (self.n_slots_per_phase == 1 or self.n_slots_per_phase % 2 == 0)):
             raise ValueError("The number of slots per phase must be 1 or an even number")
-        if link_series_coils and n_phases > n_layers:
+        
+        if self.link_series_coils and self.n_phases > self.n_layers:
             raise ValueError("Unable to generate the connections between the coils because the number of layers should be greater than or equal to the number of phases, either increase the number of layers or disable link_series_coils")
-        if terminal_type not in [TerminalType.NONE, TerminalType.THROUGH_HOLE, TerminalType.SMD, TerminalType.CASTELLATED]:
-            raise ValueError("Invalid terminal type")
-        if terminal_type != TerminalType.NONE and terminal_diameter <= 0:
-            raise ValueError("Please provide a pad diameter for the terminals")
-        if terminal_type != TerminalType.NONE and terminal_hole_diameter <= 0:
-            raise ValueError("Please provide a hole diameter for the terminals")
-        if terminal_type == TerminalType.CASTELLATED and board_shape != BoardShape.CIRCLE:
+        
+        if self.terminal_type == TerminalType.CASTELLATED and self.board_shape != BoardShape.CIRCLE:
             raise ValueError("Castellated terminals are only possible for circle boards")
-        if n_mountpoints > 0 and mountpoints_position_radius <= 0:
-            raise ValueError("Please provide a position radius for the mountpoints")
-        if n_mountpoints > 0 and mountpoints_diameter <= 0:
-            raise ValueError("Please provide a diameter for the mountpoints")
 
-
-        # Save the parameters
-        self.temperature: float = temperature
-        self.copper_resistivity: float = copper_resistivity
-        self.copper_temperature_coefficient: float = copper_temperature_coefficient
-        self.board_shape: BoardShape = board_shape
-        self.board_diameter: float = board_diameter
-        self.hole_diameter: float = hole_diameter
-        self.board_chamfer: float = board_chamfer
-        self.board_fillet: float = board_fillet
-        self.mountpoints: bool = mountpoints
-        self.n_mountpoints: int = n_mountpoints
-        self.mountpoints_position_radius: float = mountpoints_position_radius
-        self.mountpoints_diameter: float = mountpoints_diameter
-        self.mountpoints_marking_diameter: float = mountpoints_marking_diameter
-        self.board_thickness: float = board_thickness
-        self.board_outer_margin: float = board_outer_margin
-        self.board_inner_margin: float = board_inner_margin
-        self.rotation: float = rotation
-        self.inner_layers_copper_thickness: float = inner_layers_copper_thickness
-        self.outer_layers_copper_thickness: float = outer_layers_copper_thickness
-        self.n_phases: int = n_phases
-        self.n_slots_per_phase: int = n_slots_per_phase
-        self.coil_angle: float = coil_angle
-        self.n_layers: int = n_layers
-        self.four_layers_inner_vias: bool = four_layers_inner_vias
-        self.max_turns_per_layer: int = max_turns_per_layer
-        self.trace_width: float = trace_width
-        self.trace_spacing: float = trace_spacing
-        self.via_diameter: float = via_diameter
-        self.via_drill_diameter: float = via_drill_diameter
-        self.outer_vias_offset: float = outer_vias_offset
-        self.inner_vias_offset: float = inner_vias_offset
-        self.via_resistance: float = via_resistance
-        self.terminal_type: TerminalType = terminal_type
-        self.terminal_diameter: float = terminal_diameter
-        self.terminal_hole_diameter: float = terminal_hole_diameter
-        self.terminal_offset: float = terminal_offset
-        self.link_series_coils: bool = link_series_coils
-        self.series_link_inner_trace_width: float = series_link_inner_trace_width
-        self.series_link_outer_trace_width: float = series_link_outer_trace_width
-        self.series_link_inner_offset: float = series_link_inner_offset
-        self.series_link_outer_offset: float = series_link_outer_offset
-        self.link_com: bool = link_com
-        self.com_link_trace_width: float = com_link_trace_width
-        self.com_link_offset: float = com_link_offset
-        self.coil_names_font_size: float = coil_names_font_size
-        self.coil_names_offset: float = coil_names_offset
-        self.magnets_diameter: float = magnets_diameter
-        self.magnets_position_radius: float = magnets_position_radius
-        self.draw_vias: bool = draw_vias
-        self.draw_terminals: bool = draw_terminals
-        self.draw_outline: bool = draw_outline
-        self.draw_construction_geometry: bool = draw_construction_geometry
-        self.draw_only_layers: list[str] = draw_only_layers
-        self.draw_magnets: bool = draw_magnets
-        self.draw_coil_names: bool = draw_coil_names
-        self.svg_profile: str = svg_profile
-        self.svg_scale: int = svg_scale
-
-        # Computed parameters
-        self.viewport_width: float = self.board_diameter * 1.1
-        self.viewport_height: float = self.board_diameter * 1.1
-        self.board_radius: float = self.board_diameter/2
-        self.hole_radius: float = self.hole_diameter/2
-        self.via_diameter_w_spacing: float = self.via_diameter + self.trace_spacing
-        self.n_coils: int = self.n_phases * self.n_slots_per_phase
-        if self.max_turns_per_layer is None:
-            self.max_turns_per_layer: float = 1000
-        max_coil_angle = 360.0 / self.n_coils
-        if self.coil_angle is None:
-            self.coil_angle: float = max_coil_angle
-        else:
-            self.coil_angle: float = min(max_coil_angle, coil_angle)
-        match n_layers:
+        # Names of the copper layers based on the number of layers
+        match self.n_layers:
             case 2:
                 self.copper_layers = ['top', 'bottom']
             case 4:
@@ -587,45 +545,109 @@ class Config:
                 self.copper_layers = ['top', 'in1', 'in2', 'in3', 'in4', 'in5', 'in6', 'bottom']
             case _:
                 raise ValueError("The number of layers must be 2, 4, 6 or 8")
-        if self.series_link_inner_trace_width is None:
-            self.series_link_inner_trace_width = self.trace_width * 4
-        if self.series_link_outer_trace_width is None:
+        
+
+        ## Computed parameters, mainly parameters set to 'auto'
+
+        # Set the viewport size slightly larger than the board
+        self.viewport_width: float = self.board_diameter * 1.1
+        self.viewport_height: float = self.board_diameter * 1.1
+
+        # Compute radiuses based on diameters to make computations easier later
+        self.board_radius: float = self.board_diameter/2
+        self.hole_radius: float = self.hole_diameter/2
+        self.via_diameter_w_spacing: float = self.via_diameter + self.trace_spacing
+
+        # Mountpoints in the corners by default, half distance between the chamfer (or the corner) and the board outer radius
+        if self.mountpoints and self.mountpoints_position_radius == 'auto':
+            if self.board_shape == BoardShape.SQUARE:
+                chamfer_radius = self.board_radius * math.sqrt(2) - self.board_chamfer * math.sqrt(2) / 2.0
+                self.mountpoints_position_radius = round((chamfer_radius + self.board_radius) / 2.0, 1)
+            else:
+                self.mountpoints_position_radius = self.board_radius
+
+        # Total number of coils
+        self.n_coils: int = self.n_phases * self.n_slots_per_phase
+
+        # Turns per layer set to a value high enough for any practical purposes
+        if self.turns_per_layer == 'auto':
+            self.turns_per_layer: float = 1000
+        
+        # Coil angle limited by the the number of coils, and set to the max by default
+        max_coil_angle = 360.0 / self.n_coils
+        if self.coil_angle == 'auto':
+            self.coil_angle: float = max_coil_angle
+        else:
+            self.coil_angle: float = min(max_coil_angle, self.coil_angle)
+        
+        # Link and COM trace width set to 4 times the coils trace width by default, but capped by via diameter
+        # to prevent interference with the coils around the corner vias
+        if self.series_link_inner_trace_width == 'auto':
+            self.series_link_inner_trace_width = min(self.trace_width * 4, self.via_diameter)
+        if self.series_link_outer_trace_width == 'auto':
             self.series_link_outer_trace_width = self.series_link_inner_trace_width
-        if self.com_link_trace_width is None:
+        if self.com_link_trace_width == 'auto':
             self.com_link_trace_width = self.series_link_outer_trace_width
-        if self.board_outer_margin is None:
-            self.board_outer_margin = self.terminal_diameter + self.terminal_offset + self.trace_spacing * 2
-        if self.board_inner_margin is None:
-            self.board_inner_margin = self.inner_vias_offset + self.series_link_inner_trace_width + self.trace_spacing * 2
-        coil_names_position_radius = ((self.board_radius - self.board_outer_margin) + (self.hole_radius + self.board_inner_margin)) / 2.0
-        if coil_names_font_size is None:
-            suggested_size_by_width = (2 * math.pi * coil_names_position_radius / self.n_coils) / 6.0
-            suggested_size_by_height = ((self.board_radius - self.board_outer_margin) - (self.hole_radius + self.board_inner_margin)) / 10.0
+        
+        # Default board margins are set to take into account the terminals and link traces
+        if self.board_outer_margin == 'auto':
+            if self.terminal_type != TerminalType.NONE:
+                margin_terminals = self.trace_spacing + self.terminal_offset + self.terminal_diameter + self.trace_spacing
+            else:
+                margin_terminals = 0
+            if self.link_series_coils:
+                margin_series_link = self.trace_spacing + self.via_diameter + self.trace_spacing + self.series_link_outer_offset + self.series_link_outer_trace_width + self.trace_spacing
+            else:
+                margin_series_link = 0
+            if self.link_com:
+                margin_com_link = self.trace_spacing + self.com_link_offset + self.com_link_trace_width + self.trace_spacing
+            else:
+                margin_com_link = 0
+            self.board_outer_margin = round(max(margin_terminals, margin_series_link, margin_com_link), 2)
+        if self.board_inner_margin == 'auto':
+            self.board_inner_margin = round(self.trace_spacing + self.inner_vias_offset + self.trace_spacing + self.series_link_inner_trace_width + self.trace_spacing, 2)
+        self.coils_outer_radius = self.board_radius - self.board_outer_margin
+        self.coils_inner_radius = self.hole_radius + self.board_inner_margin
+        self.coils_middle_radius = (self.coils_outer_radius + self.coils_inner_radius) / 2.0
+
+        # Find a font size that fits both in height and width for the the coils names by default
+        if self.coil_names_font_size == 'auto':
+            suggested_size_by_width = (2 * math.pi * self.coils_middle_radius / self.n_coils) / 6.0
+            suggested_size_by_height = (self.coils_outer_radius - self.coils_inner_radius) / 10.0
             self.coil_names_font_size = round(min(suggested_size_by_width, suggested_size_by_height), 1)
-        if coil_names_offset is None:
-            self.coil_names_offset = self.via_diameter * 4
-        self.coil_names_position_radius = coil_names_position_radius + self.coil_names_offset
-        if self.magnets_position_radius is None:
-            self.magnets_position_radius = ((self.board_radius - self.board_outer_margin) + (self.hole_radius + self.board_inner_margin)) / 2.0
+        
+        # Place the coils names between the inner vias and the outside edge of the coils by default
+        if self.coil_names_offset == 'auto':
+            self.coil_names_offset = (self.coils_outer_radius - self.coils_middle_radius) / 2.0
+        self.coil_names_position_radius = self.coils_middle_radius + self.coil_names_offset
+        
+        # Center the magnets with the coils by default
+        if self.magnets_position_radius == 'auto':
+            self.magnets_position_radius = self.coils_middle_radius
+        
+        # Put 2 magnets for each coil in series by default, as required by the most common motor configuration
         self.n_magnets = 2 * self.n_slots_per_phase
-        if magnets_diameter is None:
-            self.magnets_diameter = round((self.board_radius - self.board_outer_margin) - (self.hole_radius + self.board_inner_margin), 1)
+
+        # Set the magnets diameter to the height of the coil by default, while making sure that they are not overlapping
         max_magnets_diameter = round((2 * math.pi * self.magnets_position_radius / self.n_magnets) * 0.9, 1)
-        if self.magnets_diameter >= max_magnets_diameter:
-            self.magnets_diameter = max_magnets_diameter
-            if magnets_diameter is not None:
-                print(f"Warning : the specified magnet diameter of {magnets_diameter}mm is too large, reducing to {self.magnets_diameter}mm")
-        if self.rotation is None:
+        if self.magnets_diameter == 'auto':
+            self.magnets_diameter = min(round(self.coils_outer_radius - self.coils_inner_radius, 1), max_magnets_diameter)
+        elif self.magnets_diameter > max_magnets_diameter:
+            print(f"Warning : the specified magnet diameter of {magnets_diameter}mm is too large")
+        
+        # No board rotation by default
+        if self.rotation == 'auto':
             self.rotation = 0.0
 
-        # SVG style
+
+        ## SVG style
         self.background_color = "#001023"
         self.construction_geometry_color: str = "#848484"
-        self.construction_geometry_line_width: float = board_diameter / 500.
+        self.construction_geometry_line_width: float = self.board_diameter / 500.
         t = self.construction_geometry_line_width
         self.construction_geometry_dashes: str = f"{t * 4} {t * 2} {t} {t * 2}"
         self.outline_color = "#D0D2CD"
-        self.outline_line_width = board_diameter / 300
+        self.outline_line_width = self.board_diameter / 300
         self.copper_layers_color = {
             'top': "#C83434",
             'bottom': "#4D7FC4",
@@ -638,7 +660,7 @@ class Config:
         }
         self.top_silk_color = "#EEEFA4"
         self.bottom_silk_color = "#E6B2A4"
-        self.silk_line_width = board_diameter / 300
+        self.silk_line_width = self.board_diameter / 300
         self.silk_font_family = "Arial, sans-serif"
         self.via_color = "#ECECEC"
         self.via_hole_color = "#E3B72E"
@@ -647,7 +669,7 @@ class Config:
         self.terminal_hole_color = self.background_color
         self.terminal_opacity = 1.0
         self.magnets_color = "#F0F0F0"
-        self.magnets_line_width = board_diameter / 200
+        self.magnets_line_width = self.board_diameter / 200
         self.magnets_opacity = 1.0
         self.magnets_dashes = "none"
         self.svg_font_size_factor = 1.5
@@ -656,50 +678,7 @@ class Config:
         """Read and parse the given file as JSON, and return a Config"""
         with open(filename, 'r') as f:
             cfg = json.load(f)
-        return Config.from_dict(cfg)
-    
-    def from_dict(cfg: dict) -> Self:
-        """Parse the given dict and return it as a Config"""
-        args = {}
-        for option in Config.options:
-            value = cfg
-            for item in option['json'].split('.'):
-                try:
-                    value = value[item]
-                except KeyError:
-                    if option.get('required', False):
-                        raise ValueError(f"Config option '{option['json']}' is required (type : {option['type'].__name__})")
-                    else:
-                        try:
-                            value = option['default']
-                            break
-                        except KeyError:
-                            raise ValueError(f"Config option '{option['json']}' is not required but doesn't have a default value")
-            if not option.get('nullable', False) and value is None:
-                raise ValueError(f"Invalid value 'null' for config option '{option['json']}' (type : {option['type'].__name__})")
-            if 'enum' in option and value not in option['enum']:
-                available_values_str = f", valid values are : {', '.join(map(lambda x: f"'{x}'", option['enum']))}"
-                raise ValueError(f"Invalid value '{value}' for config option '{option['json']}' (type : {option['type'].__name__}){available_values_str}")
-            if 'decoder' in option:
-                try:
-                    value = option['decoder'](value)
-                except KeyError:
-                    available_values_str = ''
-                    if 'enum' in option:
-                        available_values_str = f", valid values are : {', '.join(map(lambda x: f"'{x}'", option['enum']))}"
-                    raise ValueError(f"Invalid value '{value}' for config option '{option['json']}' (type : {option['type'].__name__}){available_values_str}")
-            if value is not None:
-                try:
-                    if option['type'] is float:
-                        value = float(value)
-                    elif option['type'] is int:
-                        value = int(value)
-                    elif option['type'] is bool:
-                        value = bool(value)
-                except (ValueError, TypeError):
-                    raise ValueError(f"Invalid value '{value}' for config option '{option['json']}' (type : {option['type'].__name__})")
-            args[option['name']] = value
-        return Config(**args)
+        return Config(cfg)
     
     def as_dict(self) -> dict:
         cfg = {}
@@ -710,7 +689,10 @@ class Config:
                 if not path[i] in cfg_parent:
                     cfg_parent[path[i]] = {}
                 cfg_parent = cfg_parent[path[i]]
-            value = getattr(self, option['name'])
+            if option.get('auto', False) and option['name'] in self.auto_parameters:
+                value = 'auto'
+            else:
+                value = getattr(self, option['name'])
             if 'encoder' in option:
                 value = option['encoder'](value)
             cfg_parent[option['name']] = value

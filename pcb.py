@@ -488,7 +488,7 @@ class Coil:
         n_turns = 0
         collision_via = None
         triangular = False
-        for i in range(config.max_turns_per_layer + 1): # +1 because a part of the first and last turns will be removed later
+        for i in range(config.turns_per_layer + 1): # +1 because a part of the first and last turns will be removed later
             # Construction geometry
             line_left = Line.from_two_points(board_center, Point.polar(-angle/2.0, outer_radius)).offset(loop_offset * (i + 0.5))
             line_right = Line.from_two_points(board_center, Point.polar(angle/2.0, outer_radius)).offset(-loop_offset * (i + 0.5))
@@ -1329,12 +1329,12 @@ class PCB:
             # Outer circle
             Circle(
                 center = board_center,
-                radius = config.board_radius - config.board_outer_margin,
+                radius = config.coils_outer_radius,
             ),
             # Inner circle
             Circle(
                 center = board_center,
-                radius = config.hole_radius + config.board_inner_margin,
+                radius = config.coils_inner_radius,
             ),
         ]
         if config.board_shape != BoardShape.CIRCLE:
@@ -1426,10 +1426,9 @@ class PCB:
 
         # Inside vias
         inside_vias = {}
-        coil_center_radius = ((config.board_radius - config.board_outer_margin) + (config.hole_radius + config.board_inner_margin)) / 2.0
-        coil_center = Point(0, coil_center_radius)
-        tangential_length = 2 * math.pi * coil_center_radius * config.coil_angle / 360.
-        radial_length = (config.board_radius - config.board_outer_margin) - (config.hole_radius + config.board_inner_margin)
+        coil_center = Point(0, config.coils_middle_radius)
+        tangential_length = 2 * math.pi * config.coils_middle_radius * config.coil_angle / 360.
+        radial_length = config.coils_outer_radius - config.coils_inner_radius
         match config.n_layers:
             case 2:
                 # A single via placed in the middle
@@ -1523,14 +1522,14 @@ class PCB:
         )
         right_line_offset = right_line.offset(-config.via_diameter_w_spacing / 2.0)
         outer_arc = Arc(
-            Point.polar(-config.coil_angle/2.0, config.board_radius - config.board_outer_margin),
-            Point.polar(config.coil_angle/2.0, config.board_radius - config.board_outer_margin),
-            config.board_radius - config.board_outer_margin
+            Point.polar(-config.coil_angle/2.0, config.coils_outer_radius),
+            Point.polar(config.coil_angle/2.0, config.coils_outer_radius),
+            config.coils_outer_radius
         ).offset(-config.via_diameter / 2.0 + config.outer_vias_offset)
         inner_arc = Arc(
-            Point.polar(-config.coil_angle/2.0, config.hole_radius + config.board_inner_margin),
-            Point.polar(config.coil_angle/2.0, config.hole_radius + config.board_inner_margin),
-            config.hole_radius + config.board_inner_margin
+            Point.polar(-config.coil_angle/2.0, config.coils_inner_radius),
+            Point.polar(config.coil_angle/2.0, config.coils_inner_radius),
+            config.coils_inner_radius
         ).offset(config.via_diameter / 2.0 - config.inner_vias_offset)
         if optimise_outer_vias:
             # If this flag is set, there is only one outer via used, so place it exactly
@@ -1594,7 +1593,7 @@ class PCB:
         match config.terminal_type:
             case TerminalType.THROUGH_HOLE | TerminalType.SMD:
                 # Align the terminal outside the coil
-                y = config.board_radius - config.board_outer_margin + config.trace_spacing + config.terminal_offset + config.terminal_diameter / 2.0
+                y = config.coils_outer_radius + config.trace_spacing + config.terminal_offset + config.terminal_diameter / 2.0
             case TerminalType.CASTELLATED:
                 # Align the terminal on the edge of the board
                 y = config.board_radius
@@ -1640,8 +1639,8 @@ class PCB:
                 layer_id = layer_id,
                 board_center = board_center,
                 angle = config.coil_angle,
-                outer_radius = config.board_radius - config.board_outer_margin - config.trace_width / 2.0,
-                inner_radius = config.hole_radius + config.board_inner_margin + config.trace_width / 2.0,
+                outer_radius = config.coils_outer_radius - config.trace_width / 2.0,
+                inner_radius = config.coils_inner_radius + config.trace_width / 2.0,
                 anticlockwise = specs['anticlockwise'],
                 outside_vias = outside_vias,
                 inside_vias = inside_vias,
@@ -1663,8 +1662,8 @@ class PCB:
                     layer_id = layer_id,
                     board_center = board_center,
                     angle = config.coil_angle,
-                    outer_radius = config.board_radius - config.board_outer_margin - config.trace_width / 2.0,
-                    inner_radius = config.hole_radius + config.board_inner_margin + config.trace_width / 2.0,
+                    outer_radius = config.coils_outer_radius - config.trace_width / 2.0,
+                    inner_radius = config.coils_inner_radius + config.trace_width / 2.0,
                     anticlockwise = specs['anticlockwise'],
                     outside_vias = outside_vias,
                     inside_vias = inside_vias,
@@ -1732,8 +1731,8 @@ class PCB:
                 if config.n_slots_per_phase >= 4:
                     connection_point_1 = coils[config.copper_layers[0]][0].path.start_point
                     connection_point_2 = connection_point_1.mirrored_y().rotated(board_center, (360.0 / config.n_coils) * config.n_phases)
-                    outer_vias_radius = config.board_radius - config.board_outer_margin + config.outer_vias_offset + config.trace_spacing + config.series_link_outer_trace_width / 2.0
-                    vias_circle_radius = config.board_radius - config.board_outer_margin + max(config.via_diameter / 2.0, config.series_link_outer_trace_width / 2.0) + config.trace_spacing
+                    outer_vias_radius = config.coils_outer_radius + config.outer_vias_offset + config.trace_spacing + config.series_link_outer_trace_width / 2.0
+                    vias_circle_radius = config.coils_outer_radius + max(config.via_diameter / 2.0, config.series_link_outer_trace_width / 2.0) + config.trace_spacing
                     trace_center_radius = max(vias_circle_radius + config.via_diameter / 2.0 + config.trace_spacing + config.series_link_outer_trace_width / 2.0, outer_vias_radius) + config.series_link_outer_offset
                     circle_vias = Circle(board_center, vias_circle_radius)
                     circle_trace = Circle(board_center, trace_center_radius)
@@ -1799,8 +1798,8 @@ class PCB:
             connection_point_1 = coils[layer_id][0].path.start_point
             connection_point_2 = connection_point_1.rotated(board_center, -(360.0 / config.n_coils))
             terminal_circle_radius = board_center.distance(terminal_base.center) if terminal_base is not None else 0
-            intermediate_circle_radius = config.board_radius - config.board_outer_margin + max(config.com_link_trace_width / 2.0 + config.trace_spacing, coil_outside_connection_length)
-            outer_vias_radius = config.board_radius - config.board_outer_margin + config.outer_vias_offset + config.trace_spacing + config.com_link_trace_width / 2.0
+            intermediate_circle_radius = config.coils_outer_radius + max(config.com_link_trace_width / 2.0 + config.trace_spacing, coil_outside_connection_length)
+            outer_vias_radius = config.coils_outer_radius + config.outer_vias_offset + config.trace_spacing + config.com_link_trace_width / 2.0
             if config.terminal_type == TerminalType.CASTELLATED:
                 trace_center_radius = max(intermediate_circle_radius, outer_vias_radius) + config.com_link_offset
             else:
