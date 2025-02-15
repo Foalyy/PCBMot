@@ -1050,7 +1050,7 @@ class Outline:
         if self.board_chamfer is None:
             self.board_chamfer = 0
         self.board_chamfer = min(self.board_chamfer, self.board_diameter / 2.0)
-        self.mountpoints = config.mountpoints
+        self.generate_mountpoints = config.generate_mountpoints
         self.n_mountpoints = config.n_mountpoints
         self.mountpoints_position_radius = config.mountpoints_position_radius
         self.mountpoints_diameter = config.mountpoints_diameter
@@ -1123,7 +1123,7 @@ class Outline:
         ))
 
         # Draw the mountpoints
-        if self.mountpoints and self.n_mountpoints is not None:
+        if self.generate_mountpoints and self.n_mountpoints is not None:
             for i in range(self.n_mountpoints):
                 center = Point.polar((i + 0.5) * 360 / self.n_mountpoints, self.mountpoints_position_radius)
                 parent.add(drawing.circle(
@@ -1175,7 +1175,7 @@ class Outline:
         )
 
         # Draw the mountpoints
-        if self.mountpoints and self.n_mountpoints is not None:
+        if self.generate_mountpoints and self.n_mountpoints is not None:
             for i in range(self.n_mountpoints):
                 center = Point.polar((i + 0.5) * 360 / self.n_mountpoints, self.mountpoints_position_radius)
                 kicadpcb.gr_circle(

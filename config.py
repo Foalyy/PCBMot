@@ -133,7 +133,7 @@ class Config:
 
         # Board / mountpoints
         {
-            'name': 'mountpoints',
+            'name': 'generate_mountpoints',
             'json': 'board.mountpoints.generate_mountpoints',
             'type': bool,
             'default': False,
@@ -559,7 +559,7 @@ class Config:
         self.via_diameter_w_spacing: float = self.via_diameter + self.trace_spacing
 
         # Mountpoints in the corners by default, half distance between the chamfer (or the corner) and the board outer radius
-        if self.mountpoints and self.mountpoints_position_radius == 'auto':
+        if self.generate_mountpoints and self.mountpoints_position_radius == 'auto':
             if self.board_shape == BoardShape.SQUARE:
                 chamfer_radius = self.board_radius * math.sqrt(2) - self.board_chamfer * math.sqrt(2) / 2.0
                 self.mountpoints_position_radius = round((chamfer_radius + self.board_radius) / 2.0, 1)
