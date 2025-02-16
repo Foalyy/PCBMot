@@ -1087,67 +1087,80 @@ class Outline:
             dashes: str = None,
             marking_color: str = None,
             marking_line_width: float = None,
+            only_layer = None,
         ):
         """Draw this Outline on the given SVG drawing
         
         This method returns self and can therefore be chained."""
 
-        # Draw the outer edge
-        match self.board_shape:
-            case BoardShape.CIRCLE:
-                parent.add(drawing.circle(
-                    self.board_center.to_viewport().as_tuple(),
-                    self.board_diameter / 2.0,
-                    stroke = color,
-                    stroke_width = line_width,
-                    stroke_dasharray = dashes,
-                    fill = "none",
-                    label = f"Outline_edge",
-                ))
-            case BoardShape.SQUARE:
-                self.path.draw_svg(
-                    drawing,
-                    parent,
-                    color = color,
-                    opacity = 1.0,
-                    line_width = line_width,
-                    dashes = dashes,
-                    label = f"Outline_edge",
-                )
+        if only_layer is None or only_layer == 'outline':
+            # Draw the outer edge
+            match self.board_shape:
+                case BoardShape.CIRCLE:
+                    parent.add(drawing.circle(
+                        self.board_center.to_viewport().as_tuple(),
+                        self.board_diameter / 2.0,
+                        stroke = color,
+                        stroke_width = line_width,
+                        stroke_dasharray = dashes,
+                        fill = "none",
+                        label = f"Outline_edge",
+                    ))
+                case BoardShape.SQUARE:
+                    self.path.draw_svg(
+                        drawing,
+                        parent,
+                        color = color,
+                        opacity = 1.0,
+                        line_width = line_width,
+                        dashes = dashes,
+                        label = f"Outline_edge",
+                    )
         
-        # Draw the inner hole
-        parent.add(drawing.circle(
-            self.board_center.to_viewport().as_tuple(),
-            self.hole_diameter / 2.0,
-            stroke = color,
-            stroke_width = line_width,
-            stroke_dasharray = dashes,
-            fill = "none",
-            label = f"Outline_hole",
-        ))
+            # Draw the inner hole
+            parent.add(drawing.circle(
+                self.board_center.to_viewport().as_tuple(),
+                self.hole_diameter / 2.0,
+                stroke = color,
+                stroke_width = line_width,
+                stroke_dasharray = dashes,
+                fill = "none",
+                label = f"Outline_hole",
+            ))
 
         # Draw the mountpoints
         if self.generate_mountpoints and self.n_mountpoints is not None:
             for i in range(self.n_mountpoints):
                 center = Point.polar((i + 0.5) * 360 / self.n_mountpoints, self.mountpoints_position_radius)
-                parent.add(drawing.circle(
-                    center.to_viewport().as_tuple(),
-                    self.mountpoints_diameter / 2.0,
-                    stroke = color,
-                    stroke_width = line_width,
-                    stroke_dasharray = dashes,
-                    fill = "none",
-                    label = f"Mountpoint_{i}",
-                ))
-                if self.mountpoints_marking_diameter > 0:
+                if only_layer is None or only_layer == 'outline':
                     parent.add(drawing.circle(
                         center.to_viewport().as_tuple(),
-                        self.mountpoints_marking_diameter / 2.0,
-                        stroke = marking_color,
-                        stroke_width = marking_line_width,
+                        self.mountpoints_diameter / 2.0,
+                        stroke = color,
+                        stroke_width = line_width,
+                        stroke_dasharray = dashes,
                         fill = "none",
-                        label = f"Mountpoint_marking_{i}",
+                        label = f"Mountpoint_{i}",
                     ))
+                if self.mountpoints_marking_diameter > 0:
+                    if only_layer is None or only_layer == 'top_silk':
+                        parent.add(drawing.circle(
+                            center.to_viewport().as_tuple(),
+                            self.mountpoints_marking_diameter / 2.0,
+                            stroke = marking_color,
+                            stroke_width = marking_line_width,
+                            fill = "none",
+                            label = f"Mountpoint_marking_top_{i}",
+                        ))
+                    if only_layer is None or only_layer == 'bottom_silk':
+                        parent.add(drawing.circle(
+                            center.to_viewport().as_tuple(),
+                            self.mountpoints_marking_diameter / 2.0,
+                            stroke = marking_color,
+                            stroke_width = marking_line_width,
+                            fill = "none",
+                            label = f"Mountpoint_marking_bottom_{i}",
+                        ))
         
         return self
     
@@ -2082,6 +2095,16 @@ class PCB:
                     opacity = self.config.terminal_opacity,
                     only_layer = 'top_silk',
                 )
+            self.outline.draw_svg(
+                drawing = drawing,
+                parent = svg_layers['top_silk'],
+                color = self.config.outline_color,
+                line_width = self.config.outline_line_width,
+                dashes = "none",
+                marking_color = self.config.top_silk_color,
+                marking_line_width = self.config.silk_line_width,
+                only_layer = 'top_silk',
+            )
         if only_layer is None or only_layer == 'bottom_silk':
             for item in self.bottom_silk:
                 item.draw_svg(
@@ -2089,6 +2112,16 @@ class PCB:
                     parent = svg_layers['bottom_silk'],
                     color = self.config.bottom_silk_color,
                 )
+            self.outline.draw_svg(
+                drawing = drawing,
+                parent = svg_layers['bottom_silk'],
+                color = self.config.outline_color,
+                line_width = self.config.outline_line_width,
+                dashes = "none",
+                marking_color = self.config.bottom_silk_color,
+                marking_line_width = self.config.silk_line_width,
+                only_layer = 'bottom_silk',
+            )
 
         # Draw the outline
         if self.config.draw_outline and (only_layer is None or only_layer == 'outline'):
@@ -2100,6 +2133,7 @@ class PCB:
                 dashes = "none",
                 marking_color = self.config.top_silk_color,
                 marking_line_width = self.config.silk_line_width,
+                only_layer = 'outline',
             )
 
         # Draw the construction geometry
