@@ -26,8 +26,8 @@ PRECISION = 10
 class SVGStyle:
     point_color: str = "#C02020"
     point_opacity: float = 0.7
-    point_radius: float = 0.05
-    point_line_width: float = 0.02
+    point_radius: float = 0.1
+    point_line_width: float = 0.03
 
     line_color: str = "#37C837"
     line_opacity: float = 0.7
@@ -292,6 +292,9 @@ class Point(Vector, DrawableObject):
             stroke_opacity = style.point_opacity,
             stroke_width = style.point_line_width,
         ))
+    
+    def draw_kicad(self, kicadpcb: "KicadPCB", width: float, layer: str, stroke_type: str = 'solid') -> Self:
+        """No-op : construction Points are not printed on the Kicad board"""
         return self
 
 
@@ -490,6 +493,10 @@ class Line(DrawableObject):
             stroke_width = line_width or style.line_width,
             stroke_dasharray = dashes or style.line_dashes,
         ))
+        return self
+    
+    def draw_kicad(self, kicadpcb: "KicadPCB", width: float, layer: str, stroke_type: str = 'solid') -> Self:
+        """No-op : construction Lines are not printed on the Kicad board"""
         return self
 
 
@@ -1484,4 +1491,8 @@ class Path(DrawableObject):
             stroke_dasharray = dashes or style.path_dashes,
             label = label,
         ))
+        return self
+    
+    def draw_kicad(self, kicadpcb: "KicadPCB", width: float, layer: str, stroke_type: str = 'solid') -> Self:
+        """No-op : construction Paths are not printed on the Kicad board"""
         return self

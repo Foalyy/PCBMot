@@ -250,6 +250,7 @@ class Config:
             'name': 'series_link_inner_offset',
             'json': 'coils.series_link.series_link_inner_offset',
             'type': float,
+            'signed': True,
             'zero': True,
             'default': 0.0,
         },
@@ -257,6 +258,7 @@ class Config:
             'name': 'series_link_outer_offset',
             'json': 'coils.series_link.series_link_outer_offset',
             'type': float,
+            'signed': True,
             'zero': True,
             'default': 0.0,
         },
@@ -279,6 +281,7 @@ class Config:
             'name': 'com_link_offset',
             'json': 'coils.com_link.com_link_offset',
             'type': float,
+            'signed': True,
             'zero': True,
             'default': 0.0,
         },
@@ -538,16 +541,16 @@ class Config:
         ## Other specific checks on some options
         
         if self.hole_diameter >= self.board_diameter:
-            raise ValueError("The board diameter is smaller than the hole diameter")
+            raise ValueError("The board diameter must be larger than the center hole diameter.")
         
-        if not (self.n_slots_per_phase >= 1 and (self.n_slots_per_phase == 1 or self.n_slots_per_phase % 2 == 0)):
-            raise ValueError("The number of slots per phase must be 1 or an even number")
+        if self.generate_com_terminal and not (self.n_slots_per_phase >= 1 and (self.n_slots_per_phase == 1 or self.n_slots_per_phase % 2 == 0)):
+            raise ValueError("In order to generate a COM terminal, the number of slots per phase must be 1 or an even number, either change the number of slots per phase or disable the COM terminal.")
         
         if self.link_series_coils and self.n_phases > self.n_layers:
-            raise ValueError("Unable to generate the connections between the coils because the number of layers should be greater than or equal to the number of phases, either increase the number of layers or disable link_series_coils")
+            raise ValueError("Unable to generate the connections between the coils because the number of layers should be greater than or equal to the number of phases, either increase the number of layers or disable link_series_coils.")
         
         if self.terminal_type == TerminalType.CASTELLATED and self.board_shape != BoardShape.CIRCLE:
-            raise ValueError("Castellated terminals are only possible for circle boards")
+            raise ValueError("Castellated terminals are only possible for circle boards.")
 
         # Names of the copper layers based on the number of layers
         match self.n_layers:
@@ -560,7 +563,7 @@ class Config:
             case 8:
                 self.copper_layers = ['top', 'in1', 'in2', 'in3', 'in4', 'in5', 'in6', 'bottom']
             case _:
-                raise ValueError("The number of layers must be 2, 4, 6 or 8")
+                raise ValueError("The number of layers must be 2, 4, 6 or 8.")
         
 
         ## Computed parameters, mainly parameters set to 'auto'
@@ -599,7 +602,10 @@ class Config:
         if self.series_link_outer_trace_width == 'auto':
             self.series_link_outer_trace_width = self.series_link_inner_trace_width
         if self.com_link_trace_width == 'auto':
-            self.com_link_trace_width = self.series_link_outer_trace_width
+            if self.n_slots_per_phase % 2 == 0:
+                self.com_link_trace_width = self.series_link_outer_trace_width
+            else:
+                self.com_link_trace_width = self.series_link_inner_trace_width
         
         # Default board margins are set to take into account the terminals and link traces
         if self.board_outer_margin == 'auto':

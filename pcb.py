@@ -1591,14 +1591,15 @@ class PCB:
         
         # Terminal
         terminal_base = None
-        match config.terminal_type:
-            case TerminalType.THROUGH_HOLE | TerminalType.SMD:
-                # Align the terminal outside the coil
-                y = config.coils_outer_radius + config.trace_spacing + config.terminal_offset + config.terminal_diameter / 2.0
-            case TerminalType.CASTELLATED:
-                # Align the terminal on the edge of the board
-                y = config.board_radius
-        terminal_base = Terminal(Point(0.0, y), config.terminal_type, config.terminal_diameter, config.terminal_hole_diameter)
+        if config.terminal_type != TerminalType.NONE:
+            match config.terminal_type:
+                case TerminalType.THROUGH_HOLE | TerminalType.SMD:
+                    # Align the terminal outside the coil
+                    y = config.coils_outer_radius + config.trace_spacing + config.terminal_offset + config.terminal_diameter / 2.0
+                case TerminalType.CASTELLATED:
+                    # Align the terminal on the edge of the board
+                    y = config.board_radius
+            terminal_base = Terminal(Point(0.0, y), config.terminal_type, config.terminal_diameter, config.terminal_hole_diameter)
 
         # Copy the terminals for all phases and the COM point
         if terminal_base:
@@ -1623,12 +1624,13 @@ class PCB:
                         terminal.pad_name = f"COM"
                         terminals.append(terminal)
                 else:
-                    for i in range(config.n_phases):
-                        terminal = terminal_base.rotated(board_center, 360.0 * -(i + 1) / config.n_coils)
-                        terminal.label = f"Terminal_{coil_names[-(i + 1)]}"
-                        pad_name = coil_names[-(i + 1)]
-                        terminal.pad_name = pad_name
-                        terminals.append(terminal)
+                    if config.n_slots_per_phase % 2 == 0:
+                        for i in range(config.n_phases):
+                            terminal = terminal_base.rotated(board_center, 360.0 * -(i + 1) / config.n_coils)
+                            terminal.label = f"Terminal_{coil_names[-(i + 1)]}"
+                            pad_name = coil_names[-(i + 1)]
+                            terminal.pad_name = pad_name
+                            terminals.append(terminal)
 
         # Generate the coils on all layers
         coil_outside_connection_length = config.trace_width * 2
@@ -1730,7 +1732,7 @@ class PCB:
 
                 # Base path for outer connections (odd coils)
                 # Draw a path offset toward the outer side of the board that connects these two points for the first coil
-                if config.n_slots_per_phase >= 4:
+                if config.n_slots_per_phase >= 3:
                     connection_point_1 = coils[config.copper_layers[0]][0].path.start_point
                     connection_point_2 = connection_point_1.mirrored_y().rotated(board_center, (360.0 / config.n_coils) * config.n_phases)
                     outer_vias_radius = config.coils_outer_radius + config.outer_vias_offset + config.trace_spacing + config.series_link_outer_trace_width / 2.0
@@ -1797,31 +1799,55 @@ class PCB:
             layer_id = config.copper_layers[0]
             is_outer_layer = (layer_id == config.copper_layers[0] or layer_id == config.copper_layers[-1])
             thickness = config.outer_layers_copper_thickness if is_outer_layer else config.inner_layers_copper_thickness
-            connection_point_1 = coils[layer_id][0].path.start_point
-            connection_point_2 = connection_point_1.rotated(board_center, -(360.0 / config.n_coils))
-            terminal_circle_radius = board_center.distance(terminal_base.center) if terminal_base is not None else 0
-            intermediate_circle_radius = config.coils_outer_radius + max(config.com_link_trace_width / 2.0 + config.trace_spacing, coil_outside_connection_length)
-            outer_vias_radius = config.coils_outer_radius + config.outer_vias_offset + config.trace_spacing + config.com_link_trace_width / 2.0
-            if config.terminal_type == TerminalType.CASTELLATED:
-                trace_center_radius = max(intermediate_circle_radius, outer_vias_radius) + config.com_link_offset
+            if config.n_slots_per_phase % 2 == 0:
+                # Even number of coils : the COM link is on the outer side of the board
+                connection_point_1 = coils[layer_id][0].path.start_point
+                connection_point_2 = connection_point_1.rotated(board_center, -(360.0 / config.n_coils))
+                terminal_circle_radius = board_center.distance(terminal_base.center) if terminal_base is not None else 0
+                intermediate_circle_radius = config.coils_outer_radius + max(config.com_link_trace_width / 2.0 + config.trace_spacing, coil_outside_connection_length)
+                outer_vias_radius = config.coils_outer_radius + config.outer_vias_offset + config.trace_spacing + config.com_link_trace_width / 2.0
+                if config.terminal_type == TerminalType.CASTELLATED:
+                    trace_center_radius = max(intermediate_circle_radius, outer_vias_radius) + config.com_link_offset
+                else:
+                    trace_center_radius = max(terminal_circle_radius, intermediate_circle_radius, outer_vias_radius) + config.com_link_offset
+                circle_intermediate = Circle(board_center, intermediate_circle_radius)
+                circle_trace = Circle(board_center, trace_center_radius)
+                line1 = Line.from_two_points(board_center, connection_point_1)
+                line2 = Line.from_two_points(board_center, connection_point_2)
+                intermediate_point_1 = connection_point_1.closest(line1.intersect(circle_intermediate))
+                intermediate_point_2 = connection_point_2.closest(line2.intersect(circle_intermediate))
+                corner1 = connection_point_1.closest(line1.intersect(circle_trace))
+                corner2 = connection_point_2.closest(line2.intersect(circle_trace))
+                fillet_radius = intermediate_point_1.distance(corner1) / 2.0
+                base_path_com = Path(intermediate_point_1)
+                if math.isclose(trace_center_radius, intermediate_circle_radius):
+                    base_path_com.append_arc(corner2, trace_center_radius, anticlockwise=True)
+                else:
+                    base_path_com.append_segment(corner1)
+                    base_path_com.append_arc(corner2, trace_center_radius, anticlockwise=True, fillet_radius=fillet_radius)
+                    base_path_com.append_segment(intermediate_point_2, fillet_radius=fillet_radius)
+                link_com_connection_point = intermediate_point_1
             else:
-                trace_center_radius = max(terminal_circle_radius, intermediate_circle_radius, outer_vias_radius) + config.com_link_offset
-            circle_intermediate = Circle(board_center, intermediate_circle_radius)
-            circle_trace = Circle(board_center, trace_center_radius)
-            line1 = Line.from_two_points(board_center, connection_point_1)
-            line2 = Line.from_two_points(board_center, connection_point_2)
-            intermediate_point_1 = connection_point_1.closest(line1.intersect(circle_intermediate))
-            intermediate_point_2 = connection_point_2.closest(line2.intersect(circle_intermediate))
-            corner1 = connection_point_1.closest(line1.intersect(circle_trace))
-            corner2 = connection_point_2.closest(line2.intersect(circle_trace))
-            fillet_radius = intermediate_point_1.distance(corner1) / 2.0
-            base_path_com = Path(intermediate_point_1)
-            if math.isclose(trace_center_radius, intermediate_circle_radius):
-                base_path_com.append_arc(corner2, trace_center_radius, anticlockwise=True)
-            else:
-                base_path_com.append_segment(corner1)
-                base_path_com.append_arc(corner2, trace_center_radius, anticlockwise=True, fillet_radius=fillet_radius)
-                base_path_com.append_segment(intermediate_point_2, fillet_radius=fillet_radius)
+                # Odd number of coils : the COM link is on the inner side of the board
+                connection_point_1 = coils[config.copper_layers[-1]][0].path.start_point
+                connection_point_2 = connection_point_1.rotated(board_center, -(360.0 / config.n_coils))
+                vias_circle_radius = board_center.distance(connection_point_1)
+                trace_center_radius = vias_circle_radius - config.via_diameter / 2.0 - config.trace_spacing - config.com_link_trace_width / 2.0 - config.com_link_offset
+                base_path_com = Path(connection_point_1)
+                if math.isclose(trace_center_radius, vias_circle_radius):
+                    base_path_com.append_arc(connection_point_2, trace_center_radius, anticlockwise=False)
+                else:
+                    circle = Circle(board_center, trace_center_radius)
+                    line1 = Line.from_two_points(board_center, connection_point_1)
+                    line2 = Line.from_two_points(board_center, connection_point_2)
+                    corner1 = connection_point_1.closest(line1.intersect(circle))
+                    corner2 = connection_point_2.closest(line2.intersect(circle))
+                    fillet_radius = connection_point_1.distance(corner1) / 2.0
+                    if fillet_radius < config.com_link_trace_width:
+                        fillet_radius = None
+                    base_path_com.append_segment(corner1)
+                    base_path_com.append_arc(corner2, trace_center_radius, anticlockwise=True, fillet_radius=fillet_radius)
+                    base_path_com.append_segment(connection_point_2, fillet_radius=fillet_radius)
             for i in range(config.n_phases - 1):
                 path = base_path_com.rotated(board_center, -(i + 1) * (360.0 / config.n_coils))
                 label = f"COM_{coil_names[-(i+2)]}_{coil_names[-(i+1)]}"
@@ -1833,18 +1859,26 @@ class PCB:
                     label = label,
                 )
                 links.append(link)
-            link_com_connection_point = intermediate_point_1
 
         # Connect the terminals and linking vias on the first layer
         layer_id = config.copper_layers[0]
         if config.draw_only_layers is None or layer_id in config.draw_only_layers:
             for i in range(config.n_coils):
-                if terminal_base and (i < config.n_phases or (not config.link_com and i >= config.n_coils - config.n_phases) or (i == config.n_coils - 1) or not config.link_series_coils):
+                # Connect the start of the coil to the terminal in the following cases :
+                if terminal_base and (
+                        i < config.n_phases # - the first coil of each phase (always)
+                        or not config.link_series_coils # - every coil when not linking coils in series
+                        or (not config.link_com and i >= config.n_coils - config.n_phases) # - the last coil of each phase when not linking the COM point
+                        or (config.n_slots_per_phase % 2 == 0 and config.generate_com_terminal and i == config.n_coils - 1) # - the single last coil when linking the COM point on the outer side of the board
+                    ):
                     coils[layer_id][i].path.prepend_segment(terminal_base.rotated(board_center, 360.0 * i / config.n_coils).center)
-                elif config.link_series_coils and link_vias and config.n_slots_per_phase >= 4 and i >= config.n_phases and i < (config.n_slots_per_phase - 1) * config.n_phases:
+                elif config.link_series_coils and link_vias and config.n_slots_per_phase >= 3 and i >= config.n_phases and (config.n_slots_per_phase % 2 != 0 or i < (config.n_slots_per_phase - 1) * config.n_phases):
+                    # When linking series coils, connect the start of the coil to the outer linking via for every coil starting at the second coil of each phase,
+                    # except for the last coil of each phase if the number of coils per phase is odd
                     radius = board_center.distance(link_vias[0].center)
                     coils[layer_id][i].path.prepend_segment(Point.polar(0, radius).rotated(board_center, 360.0 * i / config.n_coils))
-                elif link_com_connection_point and config.link_com and i >= config.n_coils - config.n_phases:
+                elif link_com_connection_point and config.n_slots_per_phase % 2 == 0 and config.link_com and i >= config.n_coils - config.n_phases:
+                    # When linking the COM point on the outside of the board, connect the start of the coil to the COM link
                     coils[layer_id][i].path.prepend_segment(link_com_connection_point.rotated(board_center, 360.0 * i / config.n_coils))
 
         # Print the names of the coils on the top silkscreen
