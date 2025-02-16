@@ -663,7 +663,7 @@ class Coil:
                 while path.last().tag != CoilSide.RIGHT:
                     path.pop()
                     if len(path.elements) == 1:
-                        raise ValueError("Error : unable to connect the inside of the coil to a via, try increasing hole_diameter or reducing n_slots_per_phase")
+                        raise ValueError("Error : unable to connect the inside of the coil to a via, try increasing hole_diameter or reducing n_coils_per_phase")
                 
                 # Create a corner at the point of the triangle that connects to the target via
                 last_element = path.last_geometry()
@@ -676,7 +676,7 @@ class Coil:
                 while not inside_connection.match_side(path.last().tag):
                     path.pop()
                     if len(path.elements) == 1:
-                        raise ValueError("Error : unable to connect the inside of the coil to a via, try increasing hole_diameter or reducing n_slots_per_phase")
+                        raise ValueError("Error : unable to connect the inside of the coil to a via, try increasing hole_diameter or reducing n_coils_per_phase")
                 
                 # Replace the last element in the path with a corner connected to the target via
                 last_element = path.last_geometry()
@@ -1300,7 +1300,7 @@ class PCB:
 
         # Names of the coils : A1, A2, A3, B1, ...
         coil_names = []
-        for slot in range(config.n_slots_per_phase):
+        for slot in range(config.n_coils_per_phase):
             for phase in range(config.n_phases):
                 coil_names.append(f"{chr(ord('A') + phase)}{slot + 1}")
 
@@ -1567,7 +1567,7 @@ class PCB:
             print("Warning : collision between the vias closer to the center of the board")
 
         # Copy the vias for all coils
-        for slot in range(config.n_slots_per_phase):
+        for slot in range(config.n_coils_per_phase):
             for phase in range(config.n_phases):
                 coil_idx = slot * config.n_phases + phase
                 for connection, via in inside_vias.items():
@@ -1624,7 +1624,7 @@ class PCB:
                         terminal.pad_name = f"COM"
                         terminals.append(terminal)
                 else:
-                    if config.n_slots_per_phase % 2 == 0:
+                    if config.n_coils_per_phase % 2 == 0:
                         for i in range(config.n_phases):
                             terminal = terminal_base.rotated(board_center, 360.0 * -(i + 1) / config.n_coils)
                             terminal.label = f"Terminal_{coil_names[-(i + 1)]}"
@@ -1686,7 +1686,7 @@ class PCB:
 
             # Generate the other coils by rotating the base coils
             layer_coils = []
-            for slot in range(config.n_slots_per_phase):
+            for slot in range(config.n_coils_per_phase):
                 for phase in range(config.n_phases):
                     coil_index = slot * config.n_phases + phase
                     angle = 360.0 * coil_index / config.n_coils
@@ -1703,7 +1703,7 @@ class PCB:
 
         # Connect the coils that are in series, such as A_1 with A_2
         link_vias = []
-        if config.link_series_coils and config.n_slots_per_phase >= 2:
+        if config.link_series_coils and config.n_coils_per_phase >= 2:
             if config.n_layers >= config.n_phases:
                 # Base path for inner connections (even coils)
                 # Draw a path offset toward the inner side of the board that connects these two points for the first coil
@@ -1732,7 +1732,7 @@ class PCB:
 
                 # Base path for outer connections (odd coils)
                 # Draw a path offset toward the outer side of the board that connects these two points for the first coil
-                if config.n_slots_per_phase >= 3:
+                if config.n_coils_per_phase >= 3:
                     connection_point_1 = coils[config.copper_layers[0]][0].path.start_point
                     connection_point_2 = connection_point_1.mirrored_y().rotated(board_center, (360.0 / config.n_coils) * config.n_phases)
                     outer_vias_radius = config.coils_outer_radius + config.outer_vias_offset + config.trace_spacing + config.series_link_outer_trace_width / 2.0
@@ -1755,7 +1755,7 @@ class PCB:
                     base_path_outer.append_segment(via_pos_2, fillet_radius=fillet_radius)
 
                 # Create the links on different layers by rotating the base path accordingly for each phase
-                for slot_pair in range(config.n_slots_per_phase - 1):
+                for slot_pair in range(config.n_coils_per_phase - 1):
                     for phase in range(config.n_phases):
                         angle = ((slot_pair * config.n_phases) + phase) * (360.0 / config.n_coils)
                         label = f"Link_{coil_names[slot_pair * config.n_phases + phase]}_{coil_names[(slot_pair + 1) * config.n_phases + phase]}"
@@ -1799,7 +1799,7 @@ class PCB:
             layer_id = config.copper_layers[0]
             is_outer_layer = (layer_id == config.copper_layers[0] or layer_id == config.copper_layers[-1])
             thickness = config.outer_layers_copper_thickness if is_outer_layer else config.inner_layers_copper_thickness
-            if config.n_slots_per_phase % 2 == 0:
+            if config.n_coils_per_phase % 2 == 0:
                 # Even number of coils : the COM link is on the outer side of the board
                 connection_point_1 = coils[layer_id][0].path.start_point
                 connection_point_2 = connection_point_1.rotated(board_center, -(360.0 / config.n_coils))
@@ -1869,15 +1869,15 @@ class PCB:
                         i < config.n_phases # - the first coil of each phase (always)
                         or not config.link_series_coils # - every coil when not linking coils in series
                         or (not config.link_com and i >= config.n_coils - config.n_phases) # - the last coil of each phase when not linking the COM point
-                        or (config.n_slots_per_phase % 2 == 0 and config.generate_com_terminal and i == config.n_coils - 1) # - the single last coil when linking the COM point on the outer side of the board
+                        or (config.n_coils_per_phase % 2 == 0 and config.generate_com_terminal and i == config.n_coils - 1) # - the single last coil when linking the COM point on the outer side of the board
                     ):
                     coils[layer_id][i].path.prepend_segment(terminal_base.rotated(board_center, 360.0 * i / config.n_coils).center)
-                elif config.link_series_coils and link_vias and config.n_slots_per_phase >= 3 and i >= config.n_phases and (config.n_slots_per_phase % 2 != 0 or i < (config.n_slots_per_phase - 1) * config.n_phases):
+                elif config.link_series_coils and link_vias and config.n_coils_per_phase >= 3 and i >= config.n_phases and (config.n_coils_per_phase % 2 != 0 or i < (config.n_coils_per_phase - 1) * config.n_phases):
                     # When linking series coils, connect the start of the coil to the outer linking via for every coil starting at the second coil of each phase,
                     # except for the last coil of each phase if the number of coils per phase is odd
                     radius = board_center.distance(link_vias[0].center)
                     coils[layer_id][i].path.prepend_segment(Point.polar(0, radius).rotated(board_center, 360.0 * i / config.n_coils))
-                elif link_com_connection_point and config.n_slots_per_phase % 2 == 0 and config.link_com and i >= config.n_coils - config.n_phases:
+                elif link_com_connection_point and config.n_coils_per_phase % 2 == 0 and config.link_com and i >= config.n_coils - config.n_phases:
                     # When linking the COM point on the outside of the board, connect the start of the coil to the COM link
                     coils[layer_id][i].path.prepend_segment(link_com_connection_point.rotated(board_center, 360.0 * i / config.n_coils))
 
@@ -1933,8 +1933,8 @@ class PCB:
             phases_resistance = {}
             if config.link_series_coils:
                 for phase in range(config.n_phases):
-                    length = coil_length * config.n_slots_per_phase
-                    resistance = coil_resistance * config.n_slots_per_phase
+                    length = coil_length * config.n_coils_per_phase
+                    resistance = coil_resistance * config.n_coils_per_phase
                     for via in vias:
                         # This includes links vias
                         if via.phase == phase:

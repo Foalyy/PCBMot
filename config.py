@@ -184,8 +184,8 @@ class Config:
             'required': True,
         },
         {
-            'name': 'n_slots_per_phase',
-            'json': 'coils.n_slots_per_phase',
+            'name': 'n_coils_per_phase',
+            'json': 'coils.n_coils_per_phase',
             'type': int,
             'required': True,
         },
@@ -543,8 +543,8 @@ class Config:
         if self.hole_diameter >= self.board_diameter:
             raise ValueError("The board diameter must be larger than the center hole diameter.")
         
-        if self.generate_com_terminal and not (self.n_slots_per_phase >= 1 and (self.n_slots_per_phase == 1 or self.n_slots_per_phase % 2 == 0)):
-            raise ValueError("In order to generate a COM terminal, the number of slots per phase must be 1 or an even number, either change the number of slots per phase or disable the COM terminal.")
+        if self.generate_com_terminal and not (self.n_coils_per_phase >= 1 and (self.n_coils_per_phase == 1 or self.n_coils_per_phase % 2 == 0)):
+            raise ValueError("In order to generate a COM terminal, the number of coils per phase must be 1 or an even number, either change the number of coils per phase or disable the COM terminal.")
         
         if self.link_series_coils and self.n_phases > self.n_layers:
             raise ValueError("Unable to generate the connections between the coils because the number of layers should be greater than or equal to the number of phases, either increase the number of layers or disable link_series_coils.")
@@ -586,7 +586,7 @@ class Config:
                 self.mountpoints_position_radius = self.board_radius
 
         # Total number of coils
-        self.n_coils: int = self.n_phases * self.n_slots_per_phase
+        self.n_coils: int = self.n_phases * self.n_coils_per_phase
         
         # Coil angle limited by the the number of coils, and set to the max by default
         max_coil_angle = 360.0 / self.n_coils
@@ -602,7 +602,7 @@ class Config:
         if self.series_link_outer_trace_width == 'auto':
             self.series_link_outer_trace_width = self.series_link_inner_trace_width
         if self.com_link_trace_width == 'auto':
-            if self.n_slots_per_phase % 2 == 0:
+            if self.n_coils_per_phase % 2 == 0:
                 self.com_link_trace_width = self.series_link_outer_trace_width
             else:
                 self.com_link_trace_width = self.series_link_inner_trace_width
@@ -644,7 +644,7 @@ class Config:
             self.magnets_position_radius = self.coils_middle_radius
         
         # Put 2 magnets for each coil in series by default, as required by the most common motor configuration
-        self.n_magnets = 2 * self.n_slots_per_phase
+        self.n_magnets = 2 * self.n_coils_per_phase
 
         # Set the magnets diameter to the height of the coil by default, while making sure that they are not overlapping
         max_magnets_diameter = round((2 * math.pi * self.magnets_position_radius / self.n_magnets) * 0.9, 1)
