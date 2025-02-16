@@ -295,7 +295,8 @@ class Terminal:
             ref_color: str,
             ref_font_size_factor: float,
             opacity: float = None,
-            clip_path_id = None
+            clip_path_id = None,
+            only_layer = None,
         ):
         """Draw this Terminal on the given SVG drawing
         
@@ -304,69 +305,71 @@ class Terminal:
         if self.terminal_type == TerminalType.NONE:
             return
 
-        # Group the two circles together
-        group = drawing.g(label = self.label)
+        if only_layer is None or only_layer == 'terminals':
+            # Group the two circles together
+            group = drawing.g(label = self.label)
 
-        # Draw the pad
-        if clip_path_id:
-            group.add(drawing.circle(
-                self.center.to_viewport().as_tuple(),
-                self.diameter / 2.0,
-                stroke = "none",
-                fill = pad_color,
-                opacity = opacity,
-                clip_path = f"url(#{clip_path_id})" if clip_path_id is not None else None,
-                label = f"{self.label}_pad" if self.label is not None else None,
-            ))
-        else:
-            group.add(drawing.circle(
-                self.center.to_viewport().as_tuple(),
-                self.diameter / 2.0,
-                stroke = "none",
-                fill = pad_color,
-                opacity = opacity,
-                label = f"{self.label}_pad" if self.label is not None else None,
-            ))
-
-        # Draw the hole
-        if self.terminal_type in [TerminalType.THROUGH_HOLE, TerminalType.CASTELLATED]:
+            # Draw the pad
             if clip_path_id:
                 group.add(drawing.circle(
                     self.center.to_viewport().as_tuple(),
-                    self.hole_diameter / 2.0,
+                    self.diameter / 2.0,
                     stroke = "none",
-                    fill = hole_color,
+                    fill = pad_color,
                     opacity = opacity,
                     clip_path = f"url(#{clip_path_id})" if clip_path_id is not None else None,
-                    label = f"{self.label}_hole" if self.label is not None else None,
+                    label = f"{self.label}_pad" if self.label is not None else None,
                 ))
             else:
                 group.add(drawing.circle(
                     self.center.to_viewport().as_tuple(),
-                    self.hole_diameter / 2.0,
+                    self.diameter / 2.0,
                     stroke = "none",
-                    fill = hole_color,
+                    fill = pad_color,
                     opacity = opacity,
-                    label = f"{self.label}_hole" if self.label is not None else None,
+                    label = f"{self.label}_pad" if self.label is not None else None,
                 ))
 
-        # Draw the ref
-        ref_pos, ref_angle, ref_size = self._ref_pos(- self.diameter * 0.35)
-        group.add(drawing.text(
-            text = self.pad_name,
-            insert = ref_pos.to_viewport().as_tuple(),
-            stroke = "none",
-            fill = ref_color,
-            text_anchor = "middle",
-            font_size = ref_size * ref_font_size_factor,
-            font_family = ref_font_family,
-            font_weight = "bolder",
-            transform = f"rotate({ref_angle}, {ref_pos.to_svg()})",
-            label = f"{self.label}_ref",
-        ))
+            # Draw the hole
+            if self.terminal_type in [TerminalType.THROUGH_HOLE, TerminalType.CASTELLATED]:
+                if clip_path_id:
+                    group.add(drawing.circle(
+                        self.center.to_viewport().as_tuple(),
+                        self.hole_diameter / 2.0,
+                        stroke = "none",
+                        fill = hole_color,
+                        opacity = opacity,
+                        clip_path = f"url(#{clip_path_id})" if clip_path_id is not None else None,
+                        label = f"{self.label}_hole" if self.label is not None else None,
+                    ))
+                else:
+                    group.add(drawing.circle(
+                        self.center.to_viewport().as_tuple(),
+                        self.hole_diameter / 2.0,
+                        stroke = "none",
+                        fill = hole_color,
+                        opacity = opacity,
+                        label = f"{self.label}_hole" if self.label is not None else None,
+                    ))
 
-        # Add the group to the parent
-        parent.add(group)
+            # Add the group to the parent
+            parent.add(group)
+
+        if only_layer is None or only_layer == 'top_silk':
+            # Draw the ref
+            ref_pos, ref_angle, ref_size = self._ref_pos(- self.diameter * 0.35)
+            parent.add(drawing.text(
+                text = self.pad_name,
+                insert = ref_pos.to_viewport().as_tuple(),
+                stroke = "none",
+                fill = ref_color,
+                text_anchor = "middle",
+                font_size = ref_size * ref_font_size_factor,
+                font_family = ref_font_family,
+                font_weight = "bolder",
+                transform = f"rotate({ref_angle}, {ref_pos.to_svg()})",
+                label = f"{self.label}_ref",
+            ))
 
         return self
     
@@ -1205,6 +1208,7 @@ class PCBStats:
     """A storage class for a list of computed stats about a PCB"""
     def __init__(
         self,
+        layers: list[str],
         coil_turns: int,
         coil_length: float,
         coil_radial_length: float,
@@ -1214,6 +1218,7 @@ class PCBStats:
         n_magnets: int,
         magnets_diameter: float,
     ):
+        self.layers = layers
         self.coil_turns = coil_turns
         self.coil_length = coil_length
         self.coil_radial_length = coil_radial_length
@@ -1236,6 +1241,7 @@ class PCBStats:
     def json(self) -> str:
         """Return the stats as a JSON-formatted string"""
         return json.dumps({
+            'layers': self.layers,
             'coil_turns': self.coil_turns,
             'coil_length': round(self.coil_length, 1),
             'coil_radial_length': round(self.coil_radial_length, 1),
@@ -1273,6 +1279,7 @@ class PCB:
         top_silk: list[SilkscreenText],
         bottom_silk: list[SilkscreenText],
         construction_geometry: list,
+        layers: list[str],
         stats: PCBStats,
     ):
         self.config = config
@@ -1285,6 +1292,7 @@ class PCB:
         self.top_silk = top_silk
         self.bottom_silk = bottom_silk
         self.construction_geometry = construction_geometry
+        self.layers = layers
         self.stats = stats
     
     def generate(config: Config, compute_stats: bool):
@@ -1297,6 +1305,9 @@ class PCB:
         top_silk = []
         bottom_silk = []
         construction_geometry = []
+
+        # All layers in the final drawing
+        layers = ['bottom_silk'] + list(reversed(config.copper_layers)) + ['top_silk', 'outline', 'vias', 'terminals', 'magnets', 'construction']
 
         # Names of the coils : A1, A2, A3, B1, ...
         coil_names = []
@@ -1950,6 +1961,7 @@ class PCB:
                     phases_length[phase] = coil_length
                     phases_resistance[phase] = coil_resistance + config.n_layers * config.via_resistance
             stats = PCBStats(
+                layers = layers,
                 coil_turns = coil_turns,
                 coil_length = coil_length,
                 coil_radial_length = coil_radial_length,
@@ -1974,10 +1986,14 @@ class PCB:
             top_silk = top_silk,
             bottom_silk = bottom_silk,
             construction_geometry = construction_geometry,
+            layers = layers,
             stats = stats,
         )
     
-    def draw_svg(self, drawing: svg.Drawing) -> Self:
+    def _draw_layer(self, layer_id: str, only_layer: str) -> bool:
+        return (self.config.draw_only_layers is None or layer_id in self.config.draw_only_layers) and (only_layer is None or only_layer == layer_id)
+    
+    def draw_svg(self, drawing: svg.Drawing, only_layer: str = None) -> Self:
         """Draw this PCB on the given SVG drawing
         
         This method returns self and can therefore be chained."""
@@ -1985,14 +2001,15 @@ class PCB:
         # Create the SVG layers to organize the drawing.
         # Layer groups created later will be displayed on top of the previous ones, so the board layers are reversed
         # to have the top layer on top and bottom layer on the bottom, as expected.
-        svg_layers_ids = ['bottom_silk'] + list(reversed(self.config.copper_layers)) + ['top_silk', 'outline', 'vias', 'terminals', 'magnets', 'construction']
+        svg_layers_ids = self.layers
         svg_layers = {}
         for layer_id in svg_layers_ids:
-            svg_layers[layer_id] = drawing.layer(label=layer_id.capitalize())
+            if only_layer is None or only_layer == layer_id:
+                svg_layers[layer_id] = drawing.layer(label=layer_id.capitalize())
 
         # Draw the coils
         for layer_id in self.config.copper_layers:
-            if self.config.draw_only_layers is None or layer_id in self.config.draw_only_layers:
+            if self._draw_layer(layer_id, only_layer):
                 for object in self.coils[layer_id]:
                     object.draw_svg(
                         drawing = drawing,
@@ -2003,7 +2020,7 @@ class PCB:
 
         # Draw the link traces
         for link in self.links:
-            if self.config.draw_only_layers is None or link.layer in self.config.draw_only_layers:
+            if self._draw_layer(link.layer, only_layer):
                 link.draw_svg(
                     drawing = drawing,
                     parent = svg_layers[link.layer],
@@ -2012,7 +2029,7 @@ class PCB:
                 )
 
         # Draw the vias
-        if self.config.draw_vias:
+        if self.config.draw_vias and (only_layer is None or only_layer == 'vias'):
             for via in self.vias:
                 via.draw_svg(
                     drawing = drawing,
@@ -2025,12 +2042,12 @@ class PCB:
         # Draw the terminals
         # Castellated-hole terminals are clipped for better rendering (only when exporting with the
         # SVG 'full' profile, as clipping paths are not available on the 'tiny' profile).
-        clip_path_id = None
-        if self.config.terminal_type == TerminalType.CASTELLATED and self.config.svg_profile == 'full':
-            clip_path_id = "clip_castellated_terminals"
-            clip_path = drawing.defs.add(drawing.clipPath(id=clip_path_id))
-            clip_path.add(drawing.circle(self.board_center.to_viewport().as_tuple(), self.config.board_radius))
-        if self.config.draw_terminals:
+        if self.config.draw_terminals and (only_layer is None or only_layer == 'terminals'):
+            clip_path_id = None
+            if self.config.terminal_type == TerminalType.CASTELLATED and self.config.svg_profile == 'full':
+                clip_path_id = "clip_castellated_terminals"
+                clip_path = drawing.defs.add(drawing.clipPath(id=clip_path_id))
+                clip_path.add(drawing.circle(self.board_center.to_viewport().as_tuple(), self.config.board_radius))
             for terminal in self.terminals:
                 terminal.draw_svg(
                     drawing = drawing,
@@ -2042,24 +2059,39 @@ class PCB:
                     ref_font_size_factor = self.config.svg_font_size_factor,
                     opacity = self.config.terminal_opacity,
                     clip_path_id = clip_path_id,
+                    only_layer = 'terminals',
                 )
         
         # Draw the top and bottom silkscreens
-        for item in self.top_silk:
-            item.draw_svg(
-                drawing = drawing,
-                parent = svg_layers['top_silk'],
-                color = self.config.top_silk_color,
-            )
-        for item in self.bottom_silk:
-            item.draw_svg(
-                drawing = drawing,
-                parent = svg_layers['bottom_silk'],
-                color = self.config.bottom_silk_color,
-            )
+        if only_layer is None or only_layer == 'top_silk':
+            for item in self.top_silk:
+                item.draw_svg(
+                    drawing = drawing,
+                    parent = svg_layers['top_silk'],
+                    color = self.config.top_silk_color,
+                )
+            for terminal in self.terminals:
+                terminal.draw_svg(
+                    drawing = drawing,
+                    parent = svg_layers['top_silk'],
+                    pad_color = self.config.terminal_color,
+                    hole_color = self.config.terminal_hole_color,
+                    ref_font_family = self.config.silk_font_family,
+                    ref_color = self.config.top_silk_color,
+                    ref_font_size_factor = self.config.svg_font_size_factor,
+                    opacity = self.config.terminal_opacity,
+                    only_layer = 'top_silk',
+                )
+        if only_layer is None or only_layer == 'bottom_silk':
+            for item in self.bottom_silk:
+                item.draw_svg(
+                    drawing = drawing,
+                    parent = svg_layers['bottom_silk'],
+                    color = self.config.bottom_silk_color,
+                )
 
         # Draw the outline
-        if self.config.draw_outline:
+        if self.config.draw_outline and (only_layer is None or only_layer == 'outline'):
             self.outline.draw_svg(
                 drawing = drawing,
                 parent = svg_layers['outline'],
@@ -2071,7 +2103,7 @@ class PCB:
             )
 
         # Draw the construction geometry
-        if self.config.draw_construction_geometry:
+        if self.config.draw_construction_geometry and (only_layer is None or only_layer == 'construction'):
             for object in self.construction_geometry:
                 match object:
                     case svg.base.BaseElement():
@@ -2087,7 +2119,7 @@ class PCB:
                         )
 
         # Draw the magnets
-        if self.config.draw_magnets:
+        if self.config.draw_magnets and (only_layer is None or only_layer == 'magnets'):
             for i in range(self.config.n_magnets):
                 center = Point.polar(360.0 * i / self.config.n_magnets + self.config.rotation, self.config.magnets_position_radius)
                 svg_layers['magnets'].add(drawing.circle(
@@ -2102,7 +2134,8 @@ class PCB:
 
         # Add the groups to the final output file
         for layer_id in svg_layers_ids:
-            drawing.add(svg_layers[layer_id])
+            if only_layer is None or only_layer == layer_id:
+                drawing.add(svg_layers[layer_id])
 
         return self
     
