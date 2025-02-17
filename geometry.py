@@ -670,6 +670,10 @@ class Circle(DrawableObject):
     def rotated(self, center: Self, angle: float) -> Self:
         """Create a copy of this Circle rotated around the given center point by the given angle"""
         return Circle(self.center.rotated(center, angle), self.radius)
+    
+    def perimeter(self) -> float:
+        """Return the perimeter of this Circle"""
+        return 2 * math.pi * self.radius
 
     def intersect(self, object, suppress_warning: bool = False) -> Point:
         """Calculate the intersection Point between this Circle and the given object

@@ -1,6 +1,6 @@
 from typing import Self
 from enum import Enum
-from .config import Config, BoardShape, TerminalType
+from .config import Config, BoardShape, RadialTraces, TerminalType
 import svgwrite as svg
 import math, json
 from .geometry import sin, cos, tan, asin, acos, atan, atan2
@@ -500,6 +500,11 @@ class Coil:
             arc_outer = Arc(Point.polar(-angle/2.0, outer_radius), Point.polar(angle/2.0, outer_radius), outer_radius)
             inner_radius = inner_radius_initial + i * loop_offset
             arc_inner = Arc(Point.polar(-angle/2.0, inner_radius), Point.polar(angle/2.0, inner_radius), inner_radius)
+            if config.radial_traces == RadialTraces.RADIAL:
+                point_inner_left = line_left.intersect(arc_inner)
+                line_left = Line.from_two_points(board_center, point_inner_left)
+                point_inner_right = line_right.intersect(arc_inner)
+                line_right = Line.from_two_points(board_center, point_inner_right)
 
             # Arc to outer right
             point_outer_right = line_right.intersect(arc_outer)
@@ -1452,7 +1457,7 @@ class PCB:
         # Inside vias
         inside_vias = {}
         inside_vias_center = Point(0, config.coils_middle_radius + config.inside_vias_offset)
-        tangential_length = 2 * math.pi * config.coils_middle_radius * config.coil_angle / 360.
+        tangential_length = Circle(board_center, config.coils_middle_radius).perimeter() * config.coil_angle / 360.
         radial_length = config.coils_outer_radius - config.coils_inner_radius
         match config.n_layers:
             case 2:
@@ -1467,70 +1472,104 @@ class PCB:
                 pass
             case 6:
                 # Three vias, placed either vertically, or on a triangular shape
-                if tangential_length >= radial_length:
-                    # The coil is wider than it is tall, place the via in a triangle
+                if tangential_length >= radial_length and config.radial_traces == RadialTraces.PARALLEL:
+                    # The coil is wider than it is tall and the traces are parallel, place the vias in a triangle
                     inside_inner_via = Via(inside_vias_center + Vector(0, -config.via_diameter_w_spacing / 2.0), config.via_diameter, config.via_drill_diameter, tag=CoilConnection.INSIDE_INNER_VIA)
                     inside_outer_left_via = Via(inside_inner_via.center + Vector.polar(-30, config.via_diameter_w_spacing), config.via_diameter, config.via_drill_diameter, tag=CoilConnection.INSIDE_OUTER_VIA)
                     inside_outer_right_via = Via(inside_inner_via.center + Vector.polar(30, config.via_diameter_w_spacing), config.via_diameter, config.via_drill_diameter, tag=CoilConnection.INSIDE_RIGHT_VIA)
                     inside_vias_list = [inside_outer_left_via, inside_outer_right_via, inside_inner_via]
                 else:
-                    # The coil is taller than it is wide, place the via vertically
+                    # The coil is taller than it is wide or the traces are radial, place the vias vertically
                     inside_outer_via = Via(inside_vias_center + Vector(0, config.via_diameter_w_spacing), config.via_diameter, config.via_drill_diameter, tag=CoilConnection.INSIDE_OUTER_VIA)
                     inside_middle_via = Via(inside_vias_center, config.via_diameter, config.via_drill_diameter, tag=CoilConnection.INSIDE_RIGHT_VIA)
                     inside_inner_via = Via(inside_vias_center + Vector(0, -config.via_diameter_w_spacing), config.via_diameter, config.via_drill_diameter, tag=CoilConnection.INSIDE_INNER_VIA)
                     inside_vias_list = [inside_outer_via, inside_middle_via, inside_inner_via]
             case 8:
-                # Four vias placed in an optimised diamond shape. If the coil is wider than tall (tangential length > radial length),
-                # keep the base diamond shape on its side with the two vertical vias adjacent to each other. Otherwise, optimise
-                # the shape to fit as many radial lines as possible.
-                step = config.trace_width / 10.0
-                sep = 0.0
-                if radial_length >= tangential_length:
-                    while True:
-                        # The loop starts with the two vertical vias closest to each other, and the diamond shape is progressively
-                        # stretched vertically until the line connecting the inner via and the left via is parallel to the left left.
-                        # This ensures that this leaves as much room as possible for the radial traces.
-
-                        # Compute the shape of the diamond
-                        sep_test = sep + step
-                        inside_outer_via = Via(inside_vias_center + Vector(0, (config.via_diameter_w_spacing + sep_test) / 2.0), config.via_diameter, config.via_drill_diameter)
-                        inside_inner_via = Via(inside_vias_center + Vector(0, -(config.via_diameter_w_spacing + sep_test) / 2.0), config.via_diameter, config.via_drill_diameter)
-                        c1 = Circle(inside_outer_via.center, config.via_diameter_w_spacing)
-                        c2 = Circle(inside_inner_via.center, config.via_diameter_w_spacing)
-                        points = c1.intersect(c2)
-                        if points is None:
-                            # No intersection, the vertical vias are too far appart : this shouldn't happen
-                            break
-                        if points[0].x < points[1].x:
-                            point_left = points[0]
-                        else:
-                            point_left = points[1]
-                        
-                        # Compute the cross product between the left line, and the line connecting the inner via and the left via
-                        v1 = Line.from_two_points(board_center, Point.polar(-config.coil_angle/2.0, config.board_radius)).unit_vector()
-                        v2 = Vector.from_two_points(inside_inner_via.center, point_left)
-                        if v1.cross(v2) < 0:
-                            # The cross product switched sign : we just passed the parallel
-                            break
-                        
-                        # Make sure there is enough spacing between the horizontal vias
-                        inside_via_3 = Via(points[0], config.via_diameter, config.via_drill_diameter)
-                        inside_via_4 = Via(points[1], config.via_diameter, config.via_drill_diameter)
-                        if inside_via_3.distance(inside_via_4) < config.trace_spacing:
-                            break
-                        sep = sep_test
-                inside_outer_via = Via(inside_vias_center + Vector(0, (config.via_diameter_w_spacing + sep) / 2.0), config.via_diameter, config.via_drill_diameter, tag=CoilConnection.INSIDE_OUTER_VIA)
-                inside_inner_via = Via(inside_vias_center - Vector(0, (config.via_diameter_w_spacing + sep) / 2.0), config.via_diameter, config.via_drill_diameter, tag=CoilConnection.INSIDE_INNER_VIA)
-                c1 = Circle(inside_outer_via.center, config.via_diameter_w_spacing)
-                c2 = Circle(inside_inner_via.center, config.via_diameter_w_spacing)
-                points = c1.intersect(c2)
-                if points[0].x < points[1].x:
-                    tag3, tag4 = CoilConnection.INSIDE_LEFT_VIA, CoilConnection.INSIDE_RIGHT_VIA
+                if config.radial_traces == RadialTraces.RADIAL:
+                    # Radial traces :
+                    if radial_length >= tangential_length + 1.5 * config.via_diameter_w_spacing:
+                        # The coil is taller than it is wide, place the four vias vertically
+                        inside_outer_via = Via(inside_vias_center + Vector(0, 1.5 * config.via_diameter_w_spacing), config.via_diameter, config.via_drill_diameter, tag=CoilConnection.INSIDE_OUTER_VIA)
+                        inside_middle_via_1 = Via(inside_vias_center + Vector(0, 0.5 * config.via_diameter_w_spacing), config.via_diameter, config.via_drill_diameter, tag=CoilConnection.INSIDE_LEFT_VIA)
+                        inside_middle_via_2 = Via(inside_vias_center + Vector(0, -0.5 * config.via_diameter_w_spacing), config.via_diameter, config.via_drill_diameter, tag=CoilConnection.INSIDE_RIGHT_VIA)
+                        inside_inner_via = Via(inside_vias_center + Vector(0, -1.5 * config.via_diameter_w_spacing), config.via_diameter, config.via_drill_diameter, tag=CoilConnection.INSIDE_INNER_VIA)
+                        inside_vias_list = [inside_outer_via, inside_middle_via_1, inside_middle_via_2, inside_inner_via]
+                    elif tangential_length >= radial_length + 2 * config.via_diameter_w_spacing:
+                        # The coil is wider than it is tall, place the four vias horizontally
+                        centered_circle = Circle(board_center, board_center.distance(inside_vias_center))
+                        circle_1 = Circle(inside_vias_center, 0.5 * config.via_diameter_w_spacing)
+                        circle_2 = Circle(inside_vias_center, 1.5 * config.via_diameter_w_spacing)
+                        point_middle_left, point_middle_right = centered_circle.intersect(circle_1)
+                        if point_middle_left.x > point_middle_right.x:
+                            point_middle_left, point_middle_right = point_middle_right, point_middle_left
+                        point_left, point_right = centered_circle.intersect(circle_2)
+                        if point_left.x > point_right.x:
+                            point_left, point_right = point_right, point_left
+                        inside_left_via = Via(point_left, config.via_diameter, config.via_drill_diameter, tag=CoilConnection.INSIDE_LEFT_VIA)
+                        inside_middle_left_via = Via(point_middle_left, config.via_diameter, config.via_drill_diameter, tag=CoilConnection.INSIDE_OUTER_VIA)
+                        inside_middle_right_via = Via(point_middle_right, config.via_diameter, config.via_drill_diameter, tag=CoilConnection.INSIDE_INNER_VIA)
+                        inside_right_via = Via(point_right, config.via_diameter, config.via_drill_diameter, tag=CoilConnection.INSIDE_RIGHT_VIA)
+                        inside_vias_list = [inside_left_via, inside_middle_left_via, inside_middle_right_via, inside_right_via]
+                    else:
+                        # The coil is about as tall as it is wide, place the four vias in a square shape
+                        inside_top_left_via = Via(inside_vias_center + Vector(-config.via_diameter_w_spacing / 2, config.via_diameter_w_spacing / 2), config.via_diameter, config.via_drill_diameter, tag=CoilConnection.INSIDE_OUTER_VIA)
+                        inside_top_right_via = Via(inside_vias_center + Vector(config.via_diameter_w_spacing / 2, config.via_diameter_w_spacing / 2), config.via_diameter, config.via_drill_diameter, tag=CoilConnection.INSIDE_RIGHT_VIA)
+                        inside_bottom_right_via = Via(inside_vias_center + Vector(config.via_diameter_w_spacing / 2, -config.via_diameter_w_spacing / 2), config.via_diameter, config.via_drill_diameter, tag=CoilConnection.INSIDE_INNER_VIA)
+                        inside_bottom_left_via = Via(inside_vias_center + Vector(-config.via_diameter_w_spacing / 2, -config.via_diameter_w_spacing / 2), config.via_diameter, config.via_drill_diameter, tag=CoilConnection.INSIDE_LEFT_VIA)
+                        inside_vias_list = [inside_top_left_via, inside_top_right_via, inside_bottom_right_via, inside_bottom_left_via]
                 else:
-                    tag3, tag4 = CoilConnection.INSIDE_RIGHT_VIA, CoilConnection.INSIDE_LEFT_VIA
-                inside_via_3 = Via(points[0], config.via_diameter, config.via_drill_diameter, tag=tag3)
-                inside_via_4 = Via(points[1], config.via_diameter, config.via_drill_diameter, tag=tag4)
-                inside_vias_list = [inside_outer_via, inside_inner_via, inside_via_3, inside_via_4]
+                    # Parallel traces :
+                    # Four vias placed in an optimised diamond shape. If the coil is wider than tall (tangential length > radial length),
+                    # keep the base diamond shape on its side with the two vertical vias adjacent to each other. Otherwise, optimise
+                    # the shape to fit as many radial lines as possible.
+                    step = config.trace_width / 10.0
+                    sep = 0.0
+                    if radial_length >= tangential_length:
+                        while True:
+                            # The loop starts with the two vertical vias closest to each other, and the diamond shape is progressively
+                            # stretched vertically until the line connecting the inner via and the left via is parallel to the left left.
+                            # This ensures that this leaves as much room as possible for the radial traces.
+
+                            # Compute the shape of the diamond
+                            sep_test = sep + step
+                            inside_outer_via = Via(inside_vias_center + Vector(0, (config.via_diameter_w_spacing + sep_test) / 2.0), config.via_diameter, config.via_drill_diameter)
+                            inside_inner_via = Via(inside_vias_center + Vector(0, -(config.via_diameter_w_spacing + sep_test) / 2.0), config.via_diameter, config.via_drill_diameter)
+                            c1 = Circle(inside_outer_via.center, config.via_diameter_w_spacing)
+                            c2 = Circle(inside_inner_via.center, config.via_diameter_w_spacing)
+                            points = c1.intersect(c2)
+                            if points is None:
+                                # No intersection, the vertical vias are too far appart : this shouldn't happen
+                                break
+                            if points[0].x < points[1].x:
+                                point_left = points[0]
+                            else:
+                                point_left = points[1]
+                            
+                            # Compute the cross product between the left line, and the line connecting the inner via and the left via
+                            v1 = Line.from_two_points(board_center, Point.polar(-config.coil_angle/2.0, config.board_radius)).unit_vector()
+                            v2 = Vector.from_two_points(inside_inner_via.center, point_left)
+                            if v1.cross(v2) < 0:
+                                # The cross product switched sign : we just passed the parallel
+                                break
+                            
+                            # Make sure there is enough spacing between the horizontal vias
+                            inside_via_3 = Via(points[0], config.via_diameter, config.via_drill_diameter)
+                            inside_via_4 = Via(points[1], config.via_diameter, config.via_drill_diameter)
+                            if inside_via_3.distance(inside_via_4) < config.trace_spacing:
+                                break
+                            sep = sep_test
+                    inside_outer_via = Via(inside_vias_center + Vector(0, (config.via_diameter_w_spacing + sep) / 2.0), config.via_diameter, config.via_drill_diameter, tag=CoilConnection.INSIDE_OUTER_VIA)
+                    inside_inner_via = Via(inside_vias_center - Vector(0, (config.via_diameter_w_spacing + sep) / 2.0), config.via_diameter, config.via_drill_diameter, tag=CoilConnection.INSIDE_INNER_VIA)
+                    c1 = Circle(inside_outer_via.center, config.via_diameter_w_spacing)
+                    c2 = Circle(inside_inner_via.center, config.via_diameter_w_spacing)
+                    points = c1.intersect(c2)
+                    if points[0].x < points[1].x:
+                        tag3, tag4 = CoilConnection.INSIDE_LEFT_VIA, CoilConnection.INSIDE_RIGHT_VIA
+                    else:
+                        tag3, tag4 = CoilConnection.INSIDE_RIGHT_VIA, CoilConnection.INSIDE_LEFT_VIA
+                    inside_via_3 = Via(points[0], config.via_diameter, config.via_drill_diameter, tag=tag3)
+                    inside_via_4 = Via(points[1], config.via_diameter, config.via_drill_diameter, tag=tag4)
+                    inside_vias_list = [inside_outer_via, inside_inner_via, inside_via_3, inside_via_4]
         for via in inside_vias_list:
             inside_vias[via.tag] = via
 

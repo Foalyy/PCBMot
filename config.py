@@ -1,10 +1,15 @@
 from enum import Enum
 from typing import Self
 import math, json
+from .geometry import Point, Circle
 
 class BoardShape(Enum):
     CIRCLE = 1
     SQUARE = 2
+
+class RadialTraces(Enum):
+    PARALLEL = 1
+    RADIAL = 2
 
 class TerminalType(Enum):
     NONE = 1
@@ -195,6 +200,21 @@ class Config:
             'type': float,
             'auto': True,
             'default': 'auto',
+        },
+        {
+            'name': 'radial_traces',
+            'json': 'coils.radial_traces',
+            'type': RadialTraces,
+            'decoder': lambda s : {
+                'parallel': RadialTraces.PARALLEL,
+                'radial': RadialTraces.RADIAL,
+            }[s],
+            'encoder': lambda s : {
+                RadialTraces.PARALLEL: 'parallel',
+                RadialTraces.RADIAL: 'radial',
+            }[s],
+            'enum': ['parallel', 'radial'],
+            'default': 'parallel',
         },
         {
             'name': 'four_layers_inner_vias',
@@ -630,7 +650,7 @@ class Config:
 
         # Find a font size that fits both in height and width for the the coils names by default
         if self.coil_names_font_size == 'auto':
-            suggested_size_by_width = (2 * math.pi * self.coils_middle_radius / self.n_coils) / 6.0
+            suggested_size_by_width = (Circle(Point.origin(), self.coils_middle_radius).perimeter() / self.n_coils) / 6.0
             suggested_size_by_height = (self.coils_outer_radius - self.coils_inner_radius) / 10.0
             self.coil_names_font_size = round(min(suggested_size_by_width, suggested_size_by_height), 1)
         
@@ -646,8 +666,10 @@ class Config:
         # Put 2 magnets for each coil in series by default, as required by the most common motor configuration
         self.n_magnets = 2 * self.n_coils_per_phase
 
-        # Set the magnets diameter to the height of the coil by default, while making sure that they are not overlapping
-        max_magnets_diameter = round((2 * math.pi * self.magnets_position_radius / self.n_magnets) * 0.9, 1)
+        # Set the magnets diameter to the height of the coil by default, while making sure that they are not overlapping, and not larger than the coils
+        max_magnets_diameter = round((Circle(Point.origin(), self.magnets_position_radius).perimeter() / self.n_magnets) * 0.9, 1)
+        coil_width = Circle(Point.origin(), self.coils_middle_radius).perimeter() / self.n_coils
+        max_magnets_diameter = min(coil_width, max_magnets_diameter)
         if self.magnets_diameter == 'auto':
             self.magnets_diameter = min(round(self.coils_outer_radius - self.coils_inner_radius, 1), max_magnets_diameter)
         elif self.magnets_diameter > max_magnets_diameter:
