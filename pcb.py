@@ -1,10 +1,10 @@
 from typing import Self
 from enum import Enum
-from .config import Config, BoardShape, RadialTraces, TerminalType
 import svgwrite as svg
 import math, json
+from .config import Config, BoardShape, RadialTraces, TracesGeometry, TerminalType
 from .geometry import sin, cos, tan, asin, acos, atan, atan2
-from .geometry import DrawableObject, Vector, Point, Line, Segment, Circle, Arc, PathSegment, PathArc, Path
+from .geometry import DrawableObject, Vector, Point, Line, Segment, Circle, Arc, PathSegment, PathArc, Path, CapStyle, JoinStyle
 from .kicad import KicadPCB
 
 def calculate_resistance(config: Config, length: float, width: float, thickness: float):
@@ -409,6 +409,7 @@ class Coil:
         self.rotation: float = rotation
         self.n_turns: int = n_turns
         self.label = label
+        self.polygon = None
 
     def generate(
             config: Config,
@@ -482,44 +483,51 @@ class Coil:
             print("Warning : unable to compute a fillet for the inner side of the coil, check for collision with the via and try increasing inner_vias_offset")
 
         # Calculate the spiral of the coil
+        line_center = Line.from_two_points(board_center, Point.polar(0, outer_radius))
         outer_radius_initial = outer_radius + outer_arc_radius_offset
         inner_radius_initial = inner_radius + inner_arc_radius_offset
         line_left = Line.from_two_points(board_center, Point.polar(-angle/2.0, outer_radius_initial)).offset(loop_offset * 0.5 + outer_fillet_radius)
         arc_outer = Arc(Point.polar(-angle/2.0, outer_radius_initial), Point.polar(angle/2.0, outer_radius_initial), outer_radius_initial)
         point_start = line_left.intersect(arc_outer)
-        path = Path(point_start)
+        path = Path(point_start, width=config.trace_width)
         n_turns = 0
         collision_via = None
         triangular = False
         max_turns = 10000 if config.turns_per_layer == 'auto' else config.turns_per_layer
         for i in range(max_turns + 1): # +1 because a part of the first and last turns will be removed later
             # Construction geometry
-            line_left = Line.from_two_points(board_center, Point.polar(-angle/2.0, outer_radius)).offset(loop_offset * (i + 0.5))
-            line_right = Line.from_two_points(board_center, Point.polar(angle/2.0, outer_radius)).offset(-loop_offset * (i + 0.5))
-            line_center = Line.from_two_points(board_center, Point.polar(0, outer_radius))
             arc_outer = Arc(Point.polar(-angle/2.0, outer_radius), Point.polar(angle/2.0, outer_radius), outer_radius)
             inner_radius = inner_radius_initial + i * loop_offset
             arc_inner = Arc(Point.polar(-angle/2.0, inner_radius), Point.polar(angle/2.0, inner_radius), inner_radius)
-            if config.radial_traces == RadialTraces.RADIAL:
-                point_inner_left = line_left.intersect(arc_inner)
+            if config.radial_traces == RadialTraces.PARALLEL:
+                line_left = Line.from_two_points(board_center, Point.polar(-angle/2.0, outer_radius)).offset(loop_offset * (i + 0.5))
+                line_right = Line.from_two_points(board_center, Point.polar(angle/2.0, outer_radius)).offset(-loop_offset * (i + 0.5))
+            elif config.radial_traces == RadialTraces.RADIAL:
+                if i == 0:
+                    line_left = Line.from_two_points(board_center, Point.polar(-angle/2.0, outer_radius_initial))
+                    line_right = Line.from_two_points(board_center, Point.polar(angle/2.0, outer_radius_initial))
+                    point_inner_left = line_left.offset(loop_offset/2).intersect(arc_inner)
+                    point_inner_right = line_right.offset(-loop_offset/2).intersect(arc_inner)
+                else:
+                    point_inner_left = line_left.offset(loop_offset).intersect(arc_inner)
+                    point_inner_right = line_right.offset(-loop_offset).intersect(arc_inner)
                 line_left = Line.from_two_points(board_center, point_inner_left)
-                point_inner_right = line_right.intersect(arc_inner)
                 line_right = Line.from_two_points(board_center, point_inner_right)
 
             # Arc to outer right
             point_outer_right = line_right.intersect(arc_outer)
-            arc = Arc(path.end_point, point_outer_right, outer_radius)
+            arc = Arc(path.last_point(), point_outer_right, outer_radius)
             closest_via, distance = Via.closest_in_list(inside_vias.values(), arc)
             if distance < config.trace_width / 2.0 + config.trace_spacing: # Collision
                 collision_via = closest_via
-            path.append_arc(point_outer_right, outer_radius, anticlockwise=False, fillet_radius=outer_fillet_radius, tag=CoilSide.OUTER)
+            path.append_arc(point_outer_right, outer_radius, anticlockwise=False, fillet_radius=outer_fillet_radius, fillet_end_width=path.width, tag=CoilSide.OUTER)
             if collision_via is not None:
                 break
 
             if triangular:
                 # Segment to inner point
                 point_inner = line_right.intersect(line_center)
-                segment = Segment(path.end_point, point_inner)
+                segment = Segment(path.last_point(), point_inner)
                 closest_via, distance = Via.closest_in_list(inside_vias.values(), segment)
                 if distance < config.trace_width / 2.0 + config.trace_spacing: # Collision
                     collision_via = closest_via
@@ -532,7 +540,7 @@ class Coil:
                 if point_inner_right.x < config.trace_width:
                     triangular = True
                     point_inner = line_right.intersect(line_center)
-                    segment = Segment(path.end_point, point_inner)
+                    segment = Segment(path.last_point(), point_inner)
                     closest_via, distance = Via.closest_in_list(inside_vias.values(), segment)
                     if distance < config.trace_width / 2.0 + config.trace_spacing: # Collision
                         collision_via = closest_via
@@ -540,17 +548,23 @@ class Coil:
                     if collision_via is not None:
                         break
                 else:
-                    segment = Segment(path.end_point, point_inner_right)
+                    segment = Segment(path.last_point(), point_inner_right)
                     closest_via, distance = Via.closest_in_list(inside_vias.values(), segment)
                     if distance < config.trace_width / 2.0 + config.trace_spacing: # Collision
                         collision_via = closest_via
-                    path.append_segment(point_inner_right, fillet_radius=outer_fillet_radius, tag=CoilSide.RIGHT)
+                    if config.radial_traces == RadialTraces.RADIAL:
+                        # When using radial lines, grow the trace width at the start of the right segment to use as much
+                        # copper area as possible
+                        width = (board_center.distance(point_outer_right) - outer_fillet_radius) / (board_center.distance(point_inner_right) + inner_fillet_radius) * (config.trace_spacing + path.width) - config.trace_spacing
+                    else:
+                        width = path.width
+                    path.append_segment(point_inner_right, fillet_radius=outer_fillet_radius, fillet_end_width=width, tag=CoilSide.RIGHT)
                     if collision_via is not None:
                         break
 
                     # Arc to inner left
                     point_inner_left = line_left.intersect(arc_inner)
-                    arc = Arc(path.end_point, point_inner_left, outer_radius, reverse=True)
+                    arc = Arc(path.last_point(), point_inner_left, outer_radius, reverse=True)
                     closest_via, distance = Via.closest_in_list(inside_vias.values(), arc)
                     if distance < config.trace_width / 2.0 + config.trace_spacing: # Collision
                         collision_via = closest_via
@@ -566,12 +580,18 @@ class Coil:
 
             # Segment to outer left with offset
             point_outer_left = line_left.intersect(arc_outer)
-            segment = Segment(path.end_point, point_outer_left)
+            segment = Segment(path.last_point(), point_outer_left)
             closest_via, distance = Via.closest_in_list(inside_vias.values(), segment)
             if distance < config.trace_width / 2.0 + config.trace_spacing: # Collision
                 collision_via = closest_via
             fillet_radius = config.trace_width if triangular else inner_fillet_radius
-            path.append_segment(point_outer_left, fillet_radius=fillet_radius, tag=CoilSide.LEFT)
+            if config.radial_traces == RadialTraces.RADIAL:
+                # When using radial lines, grow the trace width at the end of the left segment to use as much
+                # copper area as possible
+                width = (board_center.distance(point_outer_right) - outer_fillet_radius) / (board_center.distance(point_inner_right) + inner_fillet_radius) * (config.trace_spacing + path.width) - config.trace_spacing
+            else:
+                width = path.width
+            path.append_segment(point_outer_left, fillet_radius=fillet_radius, width=width, tag=CoilSide.LEFT)
             if collision_via is not None:
                 break
 
@@ -721,6 +741,24 @@ class Coil:
             n_turns = n_turns,
         )
     
+    def prepend_segment(
+            self,
+            to_point: Point,
+            fillet_radius: float = None,
+            width: float = None,
+            fillet_end_width: float = None,
+        ) -> Self:
+        """Prepend a segment to the path of this Coil"""
+        self.path.prepend_segment(
+            to_point = to_point,
+            fillet_radius = fillet_radius,
+            width = width,
+            fillet_end_width = fillet_end_width,
+        )
+
+        # If the stroke polygon was computed earlier, it is no longer valid
+        self.polygon = None
+
     def length(self) -> float:
         """Calculate the total length of the path of this coil"""
         length = 0
@@ -756,10 +794,14 @@ class Coil:
             resistance += calculate_resistance(config, geometry.length(), self.trace_width, self.thickness)
             p1 = element.p2
         return resistance
+    
+    def compute_polygon(self):
+        """Compute the polygon of the path of this Coil"""
+        self.polygon = self.path.stroke(cap_style=CapStyle.ROUND, join_style=JoinStyle.ROUND)
 
     def copy(self) -> Self:
         """Create a copy of this Coil"""
-        return Coil(
+        coil = Coil(
             path = self.path,
             trace_width = self.trace_width,
             thickness = self.thickness,
@@ -767,10 +809,14 @@ class Coil:
             n_turns = self.n_turns,
             label = self.label
         )
+        coil.polygon = self.polygon
+        return coil
 
     def rotate(self, center: Self, angle: float):
         """Rotate this Coil around the given center point by the given angle"""
         self.path = self.path.rotated(center, angle)
+        if self.polygon is not None:
+            self.polygon = self.polygon.rotated(center, angle)
         self.rotation += angle
 
     def rotated(self, center: Self, angle: float) -> Self:
@@ -778,50 +824,84 @@ class Coil:
         coil = self.copy()
         coil.path = coil.path.rotated(center, angle)
         coil.rotation = self.rotation + angle
+        if coil.polygon is not None:
+            coil.polygon = coil.polygon.rotated(center, angle)
         return coil
     
     def mirrored_x(self) -> Self:
         """Create a copy of this Coil mirrored about the X axis"""
         coil = self.copy()
         coil.path = coil.path.mirrored_x()
+        if coil.polygon is not None:
+            coil.polygon = coil.polygon.mirrored_x()
         return coil
     
     def mirrored_y(self) -> Self:
         """Create a copy of this Coil mirrored about the Y axis"""
         coil = self.copy()
         coil.path = coil.path.mirrored_y()
+        if coil.polygon is not None:
+            coil.polygon = coil.polygon.mirrored_y()
         return coil
     
     def draw_svg(
             self,
             drawing: svg.Drawing,
             parent: svg.base.BaseElement,
+            geometry: TracesGeometry,
             color: str = None,
             opacity: float = None,
             dashes: str = None,
         ):
-        """Draw this Coil on the given SVG drawing
+        """Draw this Coil on the given SVG drawing, either as paths or as polygons
         
         This method returns self and can therefore be chained."""
 
-        self.path.draw_svg(
-            drawing = drawing,
-            parent = parent,
-            color = color,
-            opacity = opacity,
-            line_width = self.trace_width,
-            dashes = dashes,
-            label = self.label,
-        )
+        match geometry:
+            case TracesGeometry.LINES:
+                self.path.draw_svg(
+                    drawing = drawing,
+                    parent = parent,
+                    color = color,
+                    opacity = opacity,
+                    line_width = self.trace_width,
+                    dashes = dashes,
+                    label = self.label,
+                )
+            case TracesGeometry.POLYGONS:
+                if self.polygon is None:
+                    raise ValueError("The polygon of this coil has not been calculated")
+                self.polygon.draw_svg(
+                    drawing = drawing,
+                    parent = parent,
+                    color = color,
+                    opacity = opacity,
+                    stroke_color = "none",
+                    stroke_dashes = "none",
+                    label = self.label,
+                )
         return self
     
-    def draw_kicad(self, kicadpcb: KicadPCB, layer: str) -> Self:
+    def draw_kicad(self, kicadpcb: KicadPCB, layer: str, geometry: TracesGeometry) -> Self:
         """Draw this Coil on the given Kicad board"""
-        kicadpcb.path(
-            path = self.path,
-            width = self.trace_width,
-            layer = layer,
-        )
+
+        match geometry:
+            case TracesGeometry.LINES:
+                kicadpcb.path(
+                    path = self.path,
+                    width = self.trace_width,
+                    layer = layer,
+                )
+            case TracesGeometry.POLYGONS:
+                if self.polygon is None:
+                    raise ValueError("The polygon of this coil has not been calculated")
+                # TODO : implement polygons in KicadPCB
+                print("Warning : polygons are not implemented for Kicad output yet, exporting as lines instead")
+                kicadpcb.path(
+                    path = self.path,
+                    width = self.trace_width,
+                    layer = layer,
+                )
         return self
     
     def _compute_fillet(
@@ -899,6 +979,7 @@ class Link:
         self.layer: str = layer
         self.phase: str = phase
         self.label: str = label
+        self.polygon = None
     
     def length(self) -> float:
         """Calculate the length of this Link trace"""
@@ -920,9 +1001,13 @@ class Link:
             p1 = element.p2
         return resistance
     
+    def compute_polygon(self):
+        """Calculate the polygon path of this Link"""
+        self.polygon = self.path.stroke(cap_style=CapStyle.ROUND, join_style=JoinStyle.ROUND)
+    
     def copy(self) -> Self:
         """Create a copy of this Link"""
-        return Link(
+        link = Link(
             path = self.path,
             trace_width = self.trace_width,
             thickness = self.thickness,
@@ -930,33 +1015,44 @@ class Link:
             phase = self.phase,
             label = self.label,
         )
+        link.polygon = self.polygon
+        return link
 
     def rotate(self, center: Self, angle: float):
         """Rotate this Link around the given center point by the given angle"""
         self.path = self.path.rotated(center, angle)
+        if self.polygon is not None:
+            self.polygon = self.polygon.rotated(center, angle)
 
     def rotated(self, center: Self, angle: float) -> Self:
         """Create a copy of this Link rotated around the given center point by the given angle"""
         link = self.copy()
         link.path = self.path.rotated(center, angle)
+        if link.polygon is not None:
+            link.polygon = link.polygon.rotated(center, angle)
         return link
     
     def mirrored_x(self) -> Self:
         """Create a copy of this Link mirrored about the X axis"""
         link = self.copy()
         link.path = self.path.mirrored_x()
+        if link.polygon is not None:
+            link.polygon = link.polygon.mirrored_x()
         return link
     
     def mirrored_y(self) -> Self:
         """Create a copy of this Link mirrored about the Y axis"""
         link = self.copy()
         link.path = self.path.mirrored_y()
+        if link.polygon is not None:
+            link.polygon = link.polygon.mirrored_y()
         return link
     
     def draw_svg(
             self,
             drawing: svg.Drawing,
             parent: svg.base.BaseElement,
+            geometry: TracesGeometry,
             color: str = None,
             opacity: float = None,
             dashes: str = None,
@@ -965,24 +1061,51 @@ class Link:
         
         This method returns self and can therefore be chained."""
 
-        self.path.draw_svg(
-            drawing = drawing,
-            parent = parent,
-            color = color,
-            opacity = opacity,
-            line_width = self.trace_width,
-            dashes = dashes,
-            label = self.label,
-        )
+        match geometry:
+            case TracesGeometry.LINES:
+                self.path.draw_svg(
+                    drawing = drawing,
+                    parent = parent,
+                    color = color,
+                    opacity = opacity,
+                    line_width = self.trace_width,
+                    dashes = dashes,
+                    label = self.label,
+                )
+            case TracesGeometry.POLYGONS:
+                if self.polygon is None:
+                    raise ValueError("The stroke polygon for this coil has not been calculated")
+                self.polygon.draw_svg(
+                    drawing = drawing,
+                    parent = parent,
+                    color = color,
+                    opacity = opacity,
+                    stroke_color = "none",
+                    stroke_dashes = "none",
+                    label = self.label,
+                )
         return self
     
-    def draw_kicad(self, kicadpcb: KicadPCB) -> Self:
+    def draw_kicad(self, kicadpcb: KicadPCB, geometry: TracesGeometry) -> Self:
         """Draw this Link on the given Kicad board"""
-        kicadpcb.path(
-            path = self.path,
-            width = self.trace_width,
-            layer = self.layer,
-        )
+
+        match geometry:
+            case TracesGeometry.LINES:
+                kicadpcb.path(
+                    path = self.path,
+                    width = self.trace_width,
+                    layer = self.layer,
+                )
+            case TracesGeometry.POLYGONS:
+                if self.polygon is None:
+                    raise ValueError("The polygon of this coil has not been calculated")
+                # TODO : implement polygons in KicadPCB
+                print("Warning : polygons are not implemented for Kicad output yet, exporting as lines instead")
+                kicadpcb.path(
+                    path = self.path,
+                    width = self.trace_width,
+                    layer = self.layer,
+                )
         return self
 
 class SilkscreenText:
@@ -1494,7 +1617,7 @@ class PCB:
                         inside_middle_via_2 = Via(inside_vias_center + Vector(0, -0.5 * config.via_diameter_w_spacing), config.via_diameter, config.via_drill_diameter, tag=CoilConnection.INSIDE_RIGHT_VIA)
                         inside_inner_via = Via(inside_vias_center + Vector(0, -1.5 * config.via_diameter_w_spacing), config.via_diameter, config.via_drill_diameter, tag=CoilConnection.INSIDE_INNER_VIA)
                         inside_vias_list = [inside_outer_via, inside_middle_via_1, inside_middle_via_2, inside_inner_via]
-                    elif tangential_length >= radial_length + 2 * config.via_diameter_w_spacing:
+                    elif tangential_length >= radial_length + 4 * config.via_diameter_w_spacing:
                         # The coil is wider than it is tall, place the four vias horizontally
                         centered_circle = Circle(board_center, board_center.distance(inside_vias_center))
                         circle_1 = Circle(inside_vias_center, 0.5 * config.via_diameter_w_spacing)
@@ -1719,6 +1842,8 @@ class PCB:
                 mirror_outside_inner_via = False,
                 construction_geometry = construction_geometry,
             )
+            if config.traces_geometry == TracesGeometry.POLYGONS:
+                coil_even.compute_polygon()
             if optimise_outer_vias or optimise_inner_vias:
                 # If one of these flags is set, the odd coils are not exactly the same as the even coils mirrored
                 # around the Y axis because of the position of the outside via, so we need to generate a new coil
@@ -1742,6 +1867,8 @@ class PCB:
                     mirror_outside_inner_via = optimise_inner_vias,
                     construction_geometry = construction_geometry,
                 ).mirrored_y()
+                if config.traces_geometry == TracesGeometry.POLYGONS:
+                    coil_odd.compute_polygon()
             else:
                 # In other cases, the odd coils are simply the mirror of the even coils, there is no need
                 # to generate a full new path as this is a relatively expensive operation.
@@ -1777,7 +1904,7 @@ class PCB:
                 connection_point_2 = connection_point_2.rotated(board_center, (360.0 / config.n_coils) * config.n_phases)
                 vias_circle_radius = board_center.distance(connection_point_1)
                 trace_center_radius = vias_circle_radius - config.via_diameter / 2.0 - config.trace_spacing - config.series_link_inner_trace_width / 2.0 - config.series_link_inner_offset
-                base_path_inner = Path(connection_point_1)
+                base_path_inner = Path(connection_point_1, width=config.series_link_inner_trace_width)
                 if math.isclose(trace_center_radius, vias_circle_radius):
                     base_path_inner.append_arc(connection_point_2, trace_center_radius, anticlockwise=False)
                 else:
@@ -1812,7 +1939,7 @@ class PCB:
                     fillet_radius = via_pos_1.distance(corner1) / 2.0
                     if fillet_radius < config.series_link_outer_trace_width:
                         fillet_radius = None
-                    base_path_outer = Path(via_pos_1)
+                    base_path_outer = Path(via_pos_1, width=config.series_link_outer_trace_width)
                     base_path_outer.append_segment(corner1)
                     base_path_outer.append_arc(corner2, trace_center_radius, anticlockwise=False, fillet_radius=fillet_radius)
                     base_path_outer.append_segment(via_pos_2, fillet_radius=fillet_radius)
@@ -1835,6 +1962,8 @@ class PCB:
                                 phase = phase,
                                 label = label,
                             )
+                            if config.traces_geometry == TracesGeometry.POLYGONS:
+                                link.compute_polygon()
                             links.append(link)
                         else:
                             path = base_path_outer.rotated(board_center, angle)
@@ -1846,6 +1975,8 @@ class PCB:
                                 phase = phase,
                                 label = label,
                             )
+                            if config.traces_geometry == TracesGeometry.POLYGONS:
+                                link.compute_polygon()
                             links.append(link)
                             via1_label = f"Link_via_{coil_names[slot_pair * config.n_phases + phase]}"
                             via1 = Via(via_pos_1, config.via_diameter, config.via_drill_diameter, phase=phase, label=via1_label).rotated(board_center, angle)
@@ -1882,7 +2013,7 @@ class PCB:
                 corner1 = connection_point_1.closest(line1.intersect(circle_trace))
                 corner2 = connection_point_2.closest(line2.intersect(circle_trace))
                 fillet_radius = intermediate_point_1.distance(corner1) / 2.0
-                base_path_com = Path(intermediate_point_1)
+                base_path_com = Path(intermediate_point_1, width=config.com_link_trace_width)
                 if math.isclose(trace_center_radius, intermediate_circle_radius):
                     base_path_com.append_arc(corner2, trace_center_radius, anticlockwise=True)
                 else:
@@ -1896,7 +2027,7 @@ class PCB:
                 connection_point_2 = connection_point_1.rotated(board_center, -(360.0 / config.n_coils))
                 vias_circle_radius = board_center.distance(connection_point_1)
                 trace_center_radius = vias_circle_radius - config.via_diameter / 2.0 - config.trace_spacing - config.com_link_trace_width / 2.0 - config.com_link_offset
-                base_path_com = Path(connection_point_1)
+                base_path_com = Path(connection_point_1, width=config.com_link_trace_width)
                 if math.isclose(trace_center_radius, vias_circle_radius):
                     base_path_com.append_arc(connection_point_2, trace_center_radius, anticlockwise=False)
                 else:
@@ -1921,6 +2052,8 @@ class PCB:
                     layer = layer_id,
                     label = label,
                 )
+                if config.traces_geometry == TracesGeometry.POLYGONS:
+                    link.compute_polygon()
                 links.append(link)
 
         # Connect the terminals and linking vias on the first layer
@@ -1934,15 +2067,21 @@ class PCB:
                         or (not config.link_com and i >= config.n_coils - config.n_phases) # - the last coil of each phase when not linking the COM point
                         or (config.n_coils_per_phase % 2 == 0 and config.generate_com_terminal and i == config.n_coils - 1) # - the single last coil when linking the COM point on the outer side of the board
                     ):
-                    coils[layer_id][i].path.prepend_segment(terminal_base.rotated(board_center, 360.0 * i / config.n_coils).center)
+                    coils[layer_id][i].prepend_segment(terminal_base.rotated(board_center, 360.0 * i / config.n_coils).center)
+                    if config.traces_geometry == TracesGeometry.POLYGONS:
+                        coils[layer_id][i].compute_polygon()
                 elif config.link_series_coils and link_vias and config.n_coils_per_phase >= 3 and i >= config.n_phases and (config.n_coils_per_phase % 2 != 0 or i < (config.n_coils_per_phase - 1) * config.n_phases):
                     # When linking series coils, connect the start of the coil to the outer linking via for every coil starting at the second coil of each phase,
                     # except for the last coil of each phase if the number of coils per phase is odd
                     radius = board_center.distance(link_vias[0].center)
-                    coils[layer_id][i].path.prepend_segment(Point.polar(0, radius).rotated(board_center, 360.0 * i / config.n_coils))
+                    coils[layer_id][i].prepend_segment(Point.polar(0, radius).rotated(board_center, 360.0 * i / config.n_coils))
+                    if config.traces_geometry == TracesGeometry.POLYGONS:
+                        coils[layer_id][i].compute_polygon()
                 elif link_com_connection_point and config.n_coils_per_phase % 2 == 0 and config.link_com and i >= config.n_coils - config.n_phases:
                     # When linking the COM point on the outside of the board, connect the start of the coil to the COM link
-                    coils[layer_id][i].path.prepend_segment(link_com_connection_point.rotated(board_center, 360.0 * i / config.n_coils))
+                    coils[layer_id][i].prepend_segment(link_com_connection_point.rotated(board_center, 360.0 * i / config.n_coils))
+                    if config.traces_geometry == TracesGeometry.POLYGONS:
+                        coils[layer_id][i].compute_polygon()
 
         # Print the names of the coils on the top silkscreen
         if config.draw_coil_names:
@@ -2066,6 +2205,7 @@ class PCB:
                     object.draw_svg(
                         drawing = drawing,
                         parent = svg_layers[layer_id],
+                        geometry = self.config.traces_geometry,
                         color = self.config.copper_layers_color.get(layer_id),
                         dashes = "none",
                     )
@@ -2076,6 +2216,7 @@ class PCB:
                 link.draw_svg(
                     drawing = drawing,
                     parent = svg_layers[link.layer],
+                    geometry = self.config.traces_geometry,
                     color = self.config.copper_layers_color.get(link.layer),
                     dashes = "none",
                 )
@@ -2222,12 +2363,16 @@ class PCB:
                     object.draw_kicad(
                         kicadpcb = kicadpcb,
                         layer = layer_id,
+                        geometry = self.config.traces_geometry,
                     )
 
         # Draw the link traces
         for link in self.links:
             if self.config.draw_only_layers is None or link.layer in self.config.draw_only_layers:
-                link.draw_kicad(kicadpcb)
+                link.draw_kicad(
+                    kicadpcb = kicadpcb,
+                    geometry = self.config.traces_geometry
+                )
 
         # Draw the vias
         if self.config.draw_vias:

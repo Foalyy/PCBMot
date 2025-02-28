@@ -11,6 +11,10 @@ class RadialTraces(Enum):
     PARALLEL = 1
     RADIAL = 2
 
+class TracesGeometry(Enum):
+    LINES = 1
+    POLYGONS = 2
+
 class TerminalType(Enum):
     NONE = 1
     THROUGH_HOLE = 2
@@ -202,6 +206,13 @@ class Config:
             'default': 'auto',
         },
         {
+            'name': 'turns_per_layer',
+            'json': 'coils.turns_per_layer',
+            'type': int,
+            'auto': True,
+            'default': 'auto',
+        },
+        {
             'name': 'radial_traces',
             'json': 'coils.radial_traces',
             'type': RadialTraces,
@@ -217,17 +228,19 @@ class Config:
             'default': 'parallel',
         },
         {
-            'name': 'four_layers_inner_vias',
-            'json': 'coils.four_layers_inner_vias',
-            'type': bool,
-            'default': False,
-        },
-        {
-            'name': 'turns_per_layer',
-            'json': 'coils.turns_per_layer',
-            'type': int,
-            'auto': True,
-            'default': 'auto',
+            'name': 'traces_geometry',
+            'json': 'coils.traces_geometry',
+            'type': TracesGeometry,
+            'decoder': lambda s : {
+                'lines': TracesGeometry.LINES,
+                'polygons': TracesGeometry.POLYGONS,
+            }[s],
+            'encoder': lambda s : {
+                TracesGeometry.LINES: 'lines',
+                TracesGeometry.POLYGONS: 'polygons',
+            }[s],
+            'enum': ['lines', 'polygons'],
+            'default': 'lines',
         },
         {
             'name': 'coil_names_font_size',
@@ -342,6 +355,12 @@ class Config:
             'signed': True,
             'zero': True,
             'default': 0.0,
+        },
+        {
+            'name': 'four_layers_inner_vias',
+            'json': 'vias.four_layers_inner_vias',
+            'type': bool,
+            'default': False,
         },
         {
             'name': 'via_resistance',
