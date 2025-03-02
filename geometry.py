@@ -2006,7 +2006,7 @@ class Path(DrawableObject):
                     self.elements.append(connected_element_cut)
 
                 # Add the fillet as an arc
-                fillet_arc_element = PathArc(fillet.p_arc_next, fillet.fillet_radius, fillet.anticlockwise_arc, width=fillet_end_width, tag=tag)
+                fillet_arc_element = PathArc(fillet.p_arc_next, fillet.fillet_radius, fillet.anticlockwise_arc, width=fillet_end_width)
                 if extremity == self._Extremity.START:
                     self.elements.insert(0, fillet_arc_element)
                     self.start_point = fillet.p_arc_prev

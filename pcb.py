@@ -197,15 +197,19 @@ class Via:
         )
         return self
     
-    def closest_in_list(vias: list[Self], object) -> tuple[Self, float]:
+    def closest_in_list(vias: list[Self], object, except_tags = None) -> tuple[Self, float]:
         """Class method that returns the Via in the given list that is closest to the given object
         
         See distance() for the list of supported objects."""
+        if except_tags is None:
+            except_tags = []
+        if not isinstance(except_tags, (list, tuple)):
+            except_tags = [except_tags]
         min_distance = 0.0
         closest = None
         for via in vias:
             distance = via.distance(object)
-            if closest is None or distance < min_distance:
+            if via.tag not in except_tags and (closest is None or distance < min_distance):
                 min_distance = distance
                 closest = via
         return (closest, min_distance)
@@ -550,6 +554,7 @@ class Coil:
                 else:
                     segment = Segment(path.last_point(), point_inner_right)
                     closest_via, distance = Via.closest_in_list(inside_vias.values(), segment)
+                    # TODO : take into account actual trace width when using radial traces in polygon mode
                     if distance < config.trace_width / 2.0 + config.trace_spacing: # Collision
                         collision_via = closest_via
                     if config.radial_traces == RadialTraces.RADIAL:
@@ -582,6 +587,7 @@ class Coil:
             point_outer_left = line_left.intersect(arc_outer)
             segment = Segment(path.last_point(), point_outer_left)
             closest_via, distance = Via.closest_in_list(inside_vias.values(), segment)
+            # TODO : take into account actual trace width when using radial traces in polygon mode
             if distance < config.trace_width / 2.0 + config.trace_spacing: # Collision
                 collision_via = closest_via
             fillet_radius = config.trace_width if triangular else inner_fillet_radius
@@ -700,8 +706,11 @@ class Coil:
                 path.append_segment(target_via.center)
 
             else:
-                # Pop the last elements from the path until we find the one that should be connected to the target via
-                while not inside_connection.match_side(path.last().tag):
+                # Pop the last elements from the path as long as there is a collision with a via other than the one we are targeting, and
+                # until we find the path element that should be connected to the target via
+                # TODO : take into account actual trace width when using radial traces in polygon mode
+                distance = config.trace_width / 2.0 + config.trace_spacing
+                while Via.closest_in_list(inside_vias.values(), path.last_geometry(), except_tags=inside_connection)[1] <= distance or not inside_connection.match_side(path.last().tag):
                     path.pop()
                     if len(path.elements) == 1:
                         raise ValueError("Error : unable to connect the inside of the coil to a via, try increasing hole_diameter or reducing n_coils_per_phase")
