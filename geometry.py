@@ -2362,31 +2362,44 @@ class Path(DrawableObject):
         else:
             raise ValueError(f"Invalid distance value : {distance}")
         
-        def _cut_offset_path(tools):
-            """Cut the current offset path with one or more geometry elements"""
-
-            # If a single tool was given, convert it to an list
-            if not isinstance(tools, (list, tuple)):
-                tools = [tools]
+        def _cut_offset_path(tool):
+            """Cut the current offset path with some geometry element"""
+            
+            # Check if the tool intersects one of the last few path elements
+            intersect_index = None
+            for i in range(1, 7):
+                element = offset_path.element_geometry(-i)
+                if element is None:
+                    break
+                intersect = element.intersect(tool, suppress_warning=True) if element is not None else None
+                if intersect is not None:
+                    # If an intersection point is found, make sure it is contained on the element and the tool
+                    # and not on their extrapolated basis geometries
+                    if not isinstance(intersect, (list, tuple)):
+                        intersect = [intersect]
+                    for point in intersect:
+                        if element.contains_point(point) and tool.contains_point(point):
+                            intersect_index = i
+                            break
+            if intersect_index is not None:
+                # Remove elements in the path up to the one that intersects with the tool (not included)
+                for i in range(intersect_index - 1):
+                    el = offset_path.pop()
             
             while len(offset_path) > 0:
                 # Take the last element from the path
                 last_offset_cut = offset_path.last_geometry()
                 offset_path.pop()
                 
-                # Cut it with each tool
-                for tool in tools:
-                    last_offset_cut = last_offset_cut.cut(tool)
-                    # Check if the path element was completely erased with the cut
-                    if last_offset_cut is None:
-                        break
+                # Cut it with the tool
+                last_offset_cut = last_offset_cut.cut(tool)
                 
                 # If the path element was completely erased with the cut, try again with
                 # the next element in the path
                 if last_offset_cut is None:
                     continue
 
-                # Append the last cut element to the path again
+                # Otherwise append the last cut element to the path again
                 _append_element(last_offset_cut, cut=False)
                 return
 
@@ -2405,13 +2418,15 @@ class Path(DrawableObject):
         
                 # Cut the offset element to add with the last few elements in the offset path, for the same reasons
                 offset_element_cut = offset_element
-                for i in range(5, 0, -1):
-                    geometry = offset_path.element_geometry(-i)
-                    if geometry is not None:
-                        offset_element_cut = offset_element_cut.cut(geometry, from_end=True)
-                        if offset_element_cut is None:
-                            # The element was completely removed by the cut
-                            break
+                # for i in range(5, 0, -1):
+                # # for i in range(1, 3):
+                #     geometry = offset_path.element_geometry(-i)
+                #     if geometry is None:
+                #         break
+                #     offset_element_cut = offset_element_cut.cut(geometry, from_end=True)
+                #     if offset_element_cut is None:
+                #         # The element was completely removed by the cut
+                #         break
                 element_to_add = offset_element_cut
             else:
                 element_to_add = offset_element
@@ -2574,6 +2589,18 @@ class Path(DrawableObject):
                 path_left.append_arc(path_right.last_point(), radius=self.last_point_width()/2, anticlockwise=False)
         polygonPath = path_left.append_path(path_right.reversed())
         return Polygon(polygonPath)
+    
+    def _export(self):
+        # Debug function that returns the Python code that would create the same Path
+        output = ""
+        output += f"path = Path(Point({self.start_point.x}, {self.start_point.y}), width={self.start_point_width})\n"
+        for element in self.elements:
+            match element:
+                case PathSegment():
+                    output += f"path.append_segment(Point({element.p2.x}, {element.p2.y}), width={element.width})\n"
+                case PathArc():
+                    output += f"path.append_arc(Point({element.p2.x}, {element.p2.y}), radius={element.radius}, anticlockwise={element.anticlockwise}, width={element.width})\n"
+        return output
 
     def to_svg(self, closed: bool = False) -> str:
         d = ""
