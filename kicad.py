@@ -232,6 +232,21 @@ class KicadPCB:
                     self.gr_arc(arc.p1, arc.p2, arc.midpoint(), width, layer, stroke_type)
                     p1 = element.p2
     
+    def gr_poly(self, points: list[Point], layer: str, fill: bool = True):
+        """Add a graphical polygon to the board"""
+        self.data.append(
+            [S('gr_poly'),
+                [S('pts'), *[[S('xy'), *self.map_coords(point)] for point in points]],
+                [S('stroke'),
+                    [S('width'), 0],
+                    [S('type'), S('solid')],
+                ],
+                [S('fill'), S('yes') if fill else S('no')],
+                [S('layer'), self.layers_def[layer][1]],
+                [S('uuid'), str(uuid.uuid4())],
+            ]
+        )
+    
     def text(self, text: str, center: Point, angle: float, font_size: float, layer: str):
         """Add a text to the board"""
         self.data.append(

@@ -491,6 +491,21 @@ class Config:
             'type': float,
             'default': 100,
         },
+
+        # Kicad
+        {
+            'name': 'arcs_discretization_length',
+            'json': 'kicad.arcs_discretization_length',
+            'type': float,
+            'auto': True,
+            'default': 'auto',
+        },
+        {
+            'name': 'arcs_discretization_angle',
+            'json': 'kicad.arcs_discretization_angle',
+            'type': float,
+            'default': 2, # degrees
+        },
     ]
 
     def __init__(self, cfg: dict):
@@ -697,6 +712,10 @@ class Config:
         # No board rotation by default
         if self.rotation == 'auto':
             self.rotation = 0.0
+        
+        # Set arcs discretization to the trace width as a reasonable default value
+        if self.arcs_discretization_length == 'auto':
+            self.arcs_discretization_length = self.trace_width
 
 
         ## SVG style

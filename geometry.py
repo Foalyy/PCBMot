@@ -130,7 +130,7 @@ class Vector:
         self.y: float = round(float(y), PRECISION)
 
     def __str__(self) -> str:
-        return f"Vector(x={self.x}, y={self.y})"
+        return f"Vector(x={self.x:.2f}, y={self.y:.2f})"
     
     def __add__(self, other: Self) -> Self:
         match other:
@@ -215,6 +215,15 @@ class Vector:
             return self.normalized().rotated(90)
         return vectors_sum.normalized()
     
+    def angle_with(self, other: Self) -> float:
+        """Calculate the angle between this Vector and the given one"""
+        self_length = self.length()
+        other_length = other.length()
+        if isclose(self_length, 0) or isclose(other_length, 0):
+            # Cannot calculate an angle of one of the vectors is null
+            return None
+        return acos(self.dot(other) / (self_length * other_length))
+    
     def dot(self, other: Self) -> float:
         """Calculate the dot-product of this vector with the given vector"""
         return self.x * other.x + self.y * other.y
@@ -228,7 +237,7 @@ class Point(Vector, DrawableObject):
     """A point on the 2D plane, based on the Vector class"""
 
     def __str__(self) -> str:
-        return f"Point(x={self.x}, y={self.y})"
+        return f"Point(x={self.x:.2f}, y={self.y:.2f})"
     
     def __add__(self, other) -> Self:
         match other:
@@ -929,7 +938,7 @@ class Circle(DrawableObject):
         self.radius: float = radius
 
     def __str__(self) -> str:
-        return f"Circle(center={self.center}, radius={self.radius})"
+        return f"Circle(center={self.center}, radius={self.radius:.2f})"
     
     def as_base(self) -> Self:
         """Return the base geometric element of this Circle, i.e. itself"""
@@ -1103,7 +1112,7 @@ class Arc(DrawableObject):
         self._reversed = reverse
 
     def __str__(self) -> str:
-        return f"Arc(p1={self.p1}, p2={self.p2}, radius={self.radius}{', reversed' if self._reversed else ''})"
+        return f"Arc(p1={self.p1}, p2={self.p2}, radius={self.radius:.2f}{', reversed' if self._reversed else ''})"
     
     def __mul__(self, factor: float) -> Self:
         """Create a new Arc concentric to this Arc with the same p1, and with
@@ -1252,6 +1261,16 @@ class Arc(DrawableObject):
         """Return a unit Vector tangeant to the start point of this Arc, oriented in the same direction as the Arc"""
         return Segment(self.center(), self.start_point()).unit_vector().rotated(-90 if self._reversed else 90)
 
+    def tangeant_at_point(self, point: Point) -> Vector:
+        """Return a unit Vector tangeant to this Arc at the given point, oriented in the same direction as the Arc"""
+        center = self.center()
+        if point == center:
+            return None
+        if not self.contains_point(point):
+            # If the point is not on the arc, project it
+            point = point.closest(self.intersect(Line.from_two_points(center, point)))
+        return Segment(center, point).unit_vector().rotated(-90 if self._reversed else 90)
+
     def tangeant_at_end(self) -> Vector:
         """Return a unit Vector tangeant to the end point of this Arc, oriented in the same direction as the Arc"""
         return Segment(self.center(), self.end_point()).unit_vector().rotated(-90 if self._reversed else 90)
@@ -1393,6 +1412,49 @@ class Arc(DrawableObject):
         center = line.perpendicular(p1).intersect(midline)
         radius = center.distance(p1)
         return Arc(p1, p2, radius, cross_product > 0)
+    
+    def discretize(self, segment_length: float = 1, max_deviation: float = 5) -> list[Point]:
+        """Return an approximation of this Arc as a series of small segments represented by a list of Points"""
+        start_point = self.start_point()
+        points = [start_point]
+        current_point = start_point
+        previous_point = start_point + self.tangeant_at_start().reversed()
+        
+        for i in range(1000):
+            # Find the next point on the arc at the segment_length distance from the current point
+            next_point_by_length = self.end_point()
+            circle = Circle(center=current_point, radius=segment_length)
+            intersection_points = self.as_circle().intersect(circle, suppress_warning=True)
+            if intersection_points is not None:
+                if not isinstance(intersection_points, (list, tuple)):
+                    intersection_points = [intersection_points]
+                point = previous_point.furthest(intersection_points)
+                if self.contains_point(point):
+                    next_point_by_length = point
+
+            # Find the next point on the arc at the max_deviation angle from the current point
+            next_point_by_angle = self.end_point()
+            line = Line.from_point_and_vector(current_point, self.tangeant_at_point(current_point).rotated(-max_deviation if self._reversed else max_deviation))
+            intersection_points = self.as_circle().intersect(line, suppress_warning=True)
+            if intersection_points is not None:
+                if not isinstance(intersection_points, (list, tuple)):
+                    intersection_points = [intersection_points]
+                point = previous_point.furthest(intersection_points)
+                if self.contains_point(point):
+                    next_point_by_angle = point
+            
+            # Take the closest of these two points
+            next_point = current_point.closest([next_point_by_length, next_point_by_angle])
+            
+            # Add this point to the list
+            if next_point == self.end_point() or not self.contains_point(next_point):
+                break
+            points.append(next_point)
+            previous_point = current_point
+            current_point = next_point
+        
+        points.append(self.end_point())
+        return points
     
     def draw_svg(self, drawing: svg.Drawing, parent: svg.base.BaseElement=None, color=None, opacity=None, line_width=None, dashes=None) -> Self:
         """Draw this Arc on the given SVG drawing
@@ -1727,7 +1789,7 @@ class PathSegment(PathElement):
         self.tag = tag
 
     def __str__(self) -> str:
-        return f"PathSegment(p2={self.p2}, width={self.width})"
+        return f"PathSegment(p2={self.p2}, width={self.width:.2f})"
     
     def translated(self, vector: Vector) -> Self:
         """Create a copy of this PathSegment translated according to the given vector"""
@@ -1760,7 +1822,7 @@ class PathArc(PathElement):
         self.tag = tag
 
     def __str__(self) -> str:
-        return f"PathArc(p2={self.p2}, radius={self.radius}, anticlockwise={self.anticlockwise}, width={self.width})"
+        return f"PathArc(p2={self.p2}, radius={self.radius:.2f}, anticlockwise={self.anticlockwise}, width={self.width:.2f})"
     
     def translated(self, vector: Vector) -> Self:
         """Create a copy of this PathArc translated according to the given vector"""
@@ -2189,6 +2251,9 @@ class Path(DrawableObject):
             return self.elements[-1].width
         else:
             return self.start_point_width
+    
+    def length(self) -> float:
+        return sum([element.length() for element in self.elements_geometries()])
     
     def pop(self) -> PathElement:
         return self.elements.pop()
@@ -2624,6 +2689,18 @@ class Polygon(DrawableObject):
         ))
         return self
     
-    def draw_kicad(self, kicadpcb: "KicadPCB", width: float, layer: str, stroke_type: str = 'solid') -> Self:
-        """TODO"""
+    def draw_kicad(self, kicadpcb: "KicadPCB", layer: str, arcs_discretization_length: float = 1, arcs_discretization_angle: float = 1) -> Self:
+        """Draw this Polygon on the given Kicad board"""
+        points = [self.path.start_point]
+        for element in self.path.elements_geometries():
+            match element:
+                case Segment():
+                    points.append(element.end_point())
+                case Arc():
+                    points.extend(element.discretize(segment_length=arcs_discretization_length, max_deviation=arcs_discretization_angle)[1:])
+        kicadpcb.gr_poly(
+            points = points,
+            layer = layer,
+            fill = True,
+        )
         return self

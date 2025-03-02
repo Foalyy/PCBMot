@@ -882,7 +882,7 @@ class Coil:
                 )
         return self
     
-    def draw_kicad(self, kicadpcb: KicadPCB, layer: str, geometry: TracesGeometry) -> Self:
+    def draw_kicad(self, kicadpcb: KicadPCB, layer: str, geometry: TracesGeometry, arcs_discretization_length: float, arcs_discretization_angle: float) -> Self:
         """Draw this Coil on the given Kicad board"""
 
         match geometry:
@@ -895,12 +895,11 @@ class Coil:
             case TracesGeometry.POLYGONS:
                 if self.polygon is None:
                     raise ValueError("The polygon of this coil has not been calculated")
-                # TODO : implement polygons in KicadPCB
-                print("Warning : polygons are not implemented for Kicad output yet, exporting as lines instead")
-                kicadpcb.path(
-                    path = self.path,
-                    width = self.trace_width,
+                self.polygon.draw_kicad(
+                    kicadpcb = kicadpcb,
                     layer = layer,
+                    arcs_discretization_length = arcs_discretization_length,
+                    arcs_discretization_angle = arcs_discretization_angle,
                 )
         return self
     
@@ -1086,7 +1085,7 @@ class Link:
                 )
         return self
     
-    def draw_kicad(self, kicadpcb: KicadPCB, geometry: TracesGeometry) -> Self:
+    def draw_kicad(self, kicadpcb: KicadPCB, geometry: TracesGeometry, arcs_discretization_length: float, arcs_discretization_angle: float) -> Self:
         """Draw this Link on the given Kicad board"""
 
         match geometry:
@@ -1099,12 +1098,11 @@ class Link:
             case TracesGeometry.POLYGONS:
                 if self.polygon is None:
                     raise ValueError("The polygon of this coil has not been calculated")
-                # TODO : implement polygons in KicadPCB
-                print("Warning : polygons are not implemented for Kicad output yet, exporting as lines instead")
-                kicadpcb.path(
-                    path = self.path,
-                    width = self.trace_width,
+                self.polygon.draw_kicad(
+                    kicadpcb = kicadpcb,
                     layer = self.layer,
+                    arcs_discretization_length = arcs_discretization_length,
+                    arcs_discretization_angle = arcs_discretization_angle,
                 )
         return self
 
@@ -2364,6 +2362,8 @@ class PCB:
                         kicadpcb = kicadpcb,
                         layer = layer_id,
                         geometry = self.config.traces_geometry,
+                        arcs_discretization_length = self.config.arcs_discretization_length,
+                        arcs_discretization_angle = self.config.arcs_discretization_angle,
                     )
 
         # Draw the link traces
@@ -2371,7 +2371,9 @@ class PCB:
             if self.config.draw_only_layers is None or link.layer in self.config.draw_only_layers:
                 link.draw_kicad(
                     kicadpcb = kicadpcb,
-                    geometry = self.config.traces_geometry
+                    geometry = self.config.traces_geometry,
+                    arcs_discretization_length = self.config.arcs_discretization_length,
+                    arcs_discretization_angle = self.config.arcs_discretization_angle,
                 )
 
         # Draw the vias
