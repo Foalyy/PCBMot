@@ -2627,6 +2627,7 @@ class Path(DrawableObject):
             line_width: float = None,
             dashes: str = None,
             label: str = None,
+            closed: bool = False,
         ) -> Self:
         """Draw this Path on the given SVG drawing
         
@@ -2636,7 +2637,7 @@ class Path(DrawableObject):
             parent = drawing
 
         parent.add(drawing.path(
-            d = self.to_svg(),
+            d = self.to_svg(closed),
             stroke = color or style.path_color,
             stroke_opacity = opacity or style.path_opacity,
             stroke_width = line_width or style.path_line_width,

@@ -7,19 +7,87 @@ class BoardShape(Enum):
     CIRCLE = 1
     SQUARE = 2
 
+    def deserialize(value_str):
+        return {
+            'circle': BoardShape.CIRCLE,
+            'square': BoardShape.SQUARE,
+        }[value_str]
+    
+    def serialize(self):
+        return {
+            BoardShape.CIRCLE: 'circle',
+            BoardShape.SQUARE: 'square',
+        }[self]
+
 class RadialTraces(Enum):
     PARALLEL = 1
     RADIAL = 2
 
+    def deserialize(value_str):
+        return {
+            'parallel': RadialTraces.PARALLEL,
+            'radial': RadialTraces.RADIAL,
+        }[value_str]
+    
+    def serialize(self):
+        return {
+            RadialTraces.PARALLEL: 'parallel',
+            RadialTraces.RADIAL: 'radial',
+        }[self]
+
 class TracesGeometry(Enum):
     LINES = 1
     POLYGONS = 2
+
+    def deserialize(value_str):
+        return {
+            'lines': TracesGeometry.LINES,
+            'polygons': TracesGeometry.POLYGONS,
+        }[value_str]
+    
+    def serialize(self):
+        return {
+            TracesGeometry.LINES: 'lines',
+            TracesGeometry.POLYGONS: 'polygons',
+        }[self]
 
 class TerminalType(Enum):
     NONE = 1
     THROUGH_HOLE = 2
     SMD = 3
     CASTELLATED = 4
+
+    def deserialize(value_str):
+        return {
+            'none': TerminalType.NONE,
+            'through_hole': TerminalType.THROUGH_HOLE,
+            'smd': TerminalType.SMD,
+            'castellated': TerminalType.CASTELLATED,
+        }[value_str]
+    
+    def serialize(self):
+        return {
+            TerminalType.NONE: 'none',
+            TerminalType.THROUGH_HOLE: 'through_hole',
+            TerminalType.SMD: 'smd',
+            TerminalType.CASTELLATED: 'castellated',
+        }[self]
+
+class MagnetsShape(Enum):
+    ROUND = 1
+    RECTANGULAR = 2
+
+    def deserialize(value_str):
+        return {
+            'round': MagnetsShape.ROUND,
+            'rectangular': MagnetsShape.RECTANGULAR,
+        }[value_str]
+    
+    def serialize(self):
+        return {
+            MagnetsShape.ROUND: 'round',
+            MagnetsShape.RECTANGULAR: 'rectangular',
+        }[self]
 
 ## Board config
 class Config:
@@ -51,14 +119,8 @@ class Config:
             'name': 'board_shape',
             'json': 'board.board_shape',
             'type': BoardShape,
-            'decoder': lambda s : {
-                'circle': BoardShape.CIRCLE,
-                'square': BoardShape.SQUARE,
-            }[s],
-            'encoder': lambda s : {
-                BoardShape.CIRCLE: 'circle',
-                BoardShape.SQUARE: 'square',
-            }[s],
+            'decoder': BoardShape.deserialize,
+            'encoder': BoardShape.serialize,
             'enum': ['circle', 'square'],
             'default': 'circle',
         },
@@ -216,14 +278,8 @@ class Config:
             'name': 'radial_traces',
             'json': 'coils.radial_traces',
             'type': RadialTraces,
-            'decoder': lambda s : {
-                'parallel': RadialTraces.PARALLEL,
-                'radial': RadialTraces.RADIAL,
-            }[s],
-            'encoder': lambda s : {
-                RadialTraces.PARALLEL: 'parallel',
-                RadialTraces.RADIAL: 'radial',
-            }[s],
+            'decoder': RadialTraces.deserialize,
+            'encoder': RadialTraces.serialize,
             'enum': ['parallel', 'radial'],
             'default': 'parallel',
         },
@@ -231,14 +287,8 @@ class Config:
             'name': 'traces_geometry',
             'json': 'coils.traces_geometry',
             'type': TracesGeometry,
-            'decoder': lambda s : {
-                'lines': TracesGeometry.LINES,
-                'polygons': TracesGeometry.POLYGONS,
-            }[s],
-            'encoder': lambda s : {
-                TracesGeometry.LINES: 'lines',
-                TracesGeometry.POLYGONS: 'polygons',
-            }[s],
+            'decoder': TracesGeometry.deserialize,
+            'encoder': TracesGeometry.serialize,
             'enum': ['lines', 'polygons'],
             'default': 'lines',
         },
@@ -375,18 +425,8 @@ class Config:
             'name': 'terminal_type',
             'json': 'terminals.terminal_type',
             'type': TerminalType,
-            'decoder': lambda s : {
-                'none': TerminalType.NONE,
-                'through_hole': TerminalType.THROUGH_HOLE,
-                'smd': TerminalType.SMD,
-                'castellated': TerminalType.CASTELLATED,
-            }[s],
-            'encoder': lambda s : {
-                TerminalType.NONE: 'none',
-                TerminalType.THROUGH_HOLE: 'through_hole',
-                TerminalType.SMD: 'smd',
-                TerminalType.CASTELLATED: 'castellated',
-            }[s],
+            'decoder': TerminalType.deserialize,
+            'encoder': TerminalType.serialize,
             'enum': ['none', 'through_hole', 'smd', 'castellated'],
             'default': 'through_hole',
         },
@@ -418,8 +458,24 @@ class Config:
 
         # Magnets
         {
-            'name': 'magnets_diameter',
-            'json': 'magnets.magnets_diameter',
+            'name': 'magnets_shape',
+            'json': 'magnets.magnets_shape',
+            'type': MagnetsShape,
+            'decoder': MagnetsShape.deserialize,
+            'encoder': MagnetsShape.serialize,
+            'enum': ['round', 'rectangular'],
+            'default': 'round',
+        },
+        {
+            'name': 'magnets_width',
+            'json': 'magnets.magnets_width',
+            'type': float,
+            'auto': True,
+            'default': 'auto',
+        },
+        {
+            'name': 'magnets_height',
+            'json': 'magnets.magnets_height',
             'type': float,
             'auto': True,
             'default': 'auto',
@@ -700,14 +756,23 @@ class Config:
         # Put 2 magnets for each coil in series by default, as required by the most common motor configuration
         self.n_magnets = 2 * self.n_coils_per_phase
 
-        # Set the magnets diameter to the height of the coil by default, while making sure that they are not overlapping, and not larger than the coils
-        max_magnets_diameter = round((Circle(Point.origin(), self.magnets_position_radius).perimeter() / self.n_magnets) * 0.9, 1)
-        coil_width = Circle(Point.origin(), self.coils_middle_radius).perimeter() / self.n_coils
-        max_magnets_diameter = min(coil_width, max_magnets_diameter)
-        if self.magnets_diameter == 'auto':
-            self.magnets_diameter = min(round(self.coils_outer_radius - self.coils_inner_radius, 1), max_magnets_diameter)
-        elif self.magnets_diameter > max_magnets_diameter:
-            print(f"Warning : the specified magnet diameter of {magnets_diameter}mm is too large")
+        if self.magnets_shape == MagnetsShape.ROUND:
+            # Set the magnets diameter to the height of the coil by default, while making sure that they are not overlapping, and not larger than the coils
+            max_magnets_width = round((Circle(Point.origin(), self.magnets_position_radius).perimeter() / self.n_magnets) * 0.9, 1)
+            coil_width = Circle(Point.origin(), self.coils_middle_radius).perimeter() / self.n_coils
+            max_magnets_width = min(coil_width, max_magnets_width)
+            if self.magnets_width == 'auto':
+                self.magnets_width = min(round(self.coils_outer_radius - self.coils_inner_radius, 1), max_magnets_width)
+            elif self.magnets_width > max_magnets_width:
+                print(f"Warning : the specified magnet diameter of {magnets_width}mm is too large")
+            self.magnets_height = self.magnets_width
+        elif self.magnets_shape == MagnetsShape.RECTANGULAR:
+            # Set the height of the magnets based on the height of the coils, and the width based on the inner diameter of the coils
+            if self.magnets_height == 'auto':
+                self.magnets_height = round(self.coils_outer_radius - self.coils_inner_radius, 1)
+            if self.magnets_width == 'auto':
+                self.magnets_width = round((2 * math.pi * self.coils_inner_radius / self.n_magnets) * 0.9, 1)
+            
         
         # No board rotation by default
         if self.rotation == 'auto':

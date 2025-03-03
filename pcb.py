@@ -2,9 +2,9 @@ from typing import Self
 from enum import Enum
 import svgwrite as svg
 import math, json
-from .config import Config, BoardShape, RadialTraces, TracesGeometry, TerminalType
+from .config import Config, BoardShape, RadialTraces, TracesGeometry, TerminalType, MagnetsShape
 from .geometry import sin, cos, tan, asin, acos, atan, atan2
-from .geometry import DrawableObject, Vector, Point, Line, Segment, Circle, Arc, PathSegment, PathArc, Path, CapStyle, JoinStyle
+from .geometry import DrawableObject, Vector, Point, Line, Segment, Circle, Arc, PathSegment, PathArc, Path, Polygon, CapStyle, JoinStyle
 from .kicad import KicadPCB
 
 def calculate_resistance(config: Config, length: float, width: float, thickness: float):
@@ -1369,8 +1369,10 @@ class PCBStats:
         coil_resistance: float,
         phases_length: dict[int, float],
         phases_resistance: dict[int, float],
+        magnets_shape: MagnetsShape,
         n_magnets: int,
-        magnets_diameter: float,
+        magnets_width: float,
+        magnets_height: float,
     ):
         self.layers = layers
         self.coil_turns = coil_turns
@@ -1379,8 +1381,10 @@ class PCBStats:
         self.coil_resistance = coil_resistance
         self.phases_length = phases_length
         self.phases_resistance = phases_resistance
+        self.magnets_shape = magnets_shape
         self.n_magnets = n_magnets
-        self.magnets_diameter = magnets_diameter
+        self.magnets_width = magnets_width
+        self.magnets_height = magnets_height
 
         self.coil_radial_length_ratio = coil_radial_length / coil_length
         average_phase_length = 0
@@ -1405,8 +1409,10 @@ class PCBStats:
             'average_phase_length': round(self.average_phase_length, 1),
             'phases_resistance': self.phases_resistance,
             'average_phase_resistance': round(self.average_phase_resistance, 3),
+            'magnets_shape': self.magnets_shape.serialize(),
             'n_magnets': self.n_magnets,
-            'magnets_diameter': round(self.magnets_diameter, 1),
+            'magnets_width': round(self.magnets_width, 1),
+            'magnets_height': round(self.magnets_height, 1),
         }, indent=4)
     
     def write(self, destination: str):
@@ -2196,8 +2202,10 @@ class PCB:
                 coil_resistance = coil_resistance,
                 phases_length = phases_length,
                 phases_resistance = phases_resistance,
+                magnets_shape = config.magnets_shape,
                 n_magnets = config.n_magnets,
-                magnets_diameter = config.magnets_diameter,
+                magnets_width = config.magnets_width,
+                magnets_height = config.magnets_height,
             )
         else:
             stats = None
@@ -2371,17 +2379,36 @@ class PCB:
 
         # Draw the magnets
         if self.config.draw_magnets and (only_layer is None or only_layer == 'magnets'):
+            if self.config.magnets_shape == MagnetsShape.RECTANGULAR:
+                magnet_base = Path(Point(-self.config.magnets_width / 2, self.config.magnets_height / 2))
+                magnet_base.append_segment(Point(self.config.magnets_width / 2, self.config.magnets_height / 2))
+                magnet_base.append_segment(Point(self.config.magnets_width / 2, -self.config.magnets_height / 2))
+                magnet_base.append_segment(Point(-self.config.magnets_width / 2, -self.config.magnets_height / 2))
             for i in range(self.config.n_magnets):
-                center = Point.polar(360.0 * i / self.config.n_magnets + self.config.rotation, self.config.magnets_position_radius)
-                svg_layers['magnets'].add(drawing.circle(
-                    center = center.to_viewport().as_tuple(),
-                    r = self.config.magnets_diameter / 2.0,
-                    stroke = self.config.magnets_color,
-                    stroke_width = self.config.magnets_line_width,
-                    stroke_opacity = self.config.magnets_opacity,
-                    stroke_dasharray = self.config.magnets_dashes,
-                    label = f"Magnet_{i + 1}"
-                ))
+                if self.config.magnets_shape == MagnetsShape.ROUND:
+                    center = Point.polar(360.0 * i / self.config.n_magnets + self.config.rotation, self.config.magnets_position_radius)
+                    svg_layers['magnets'].add(drawing.circle(
+                        center = center.to_viewport().as_tuple(),
+                        r = self.config.magnets_width / 2.0,
+                        stroke = self.config.magnets_color,
+                        stroke_width = self.config.magnets_line_width,
+                        stroke_opacity = self.config.magnets_opacity,
+                        stroke_dasharray = self.config.magnets_dashes,
+                        label = f"Magnet_{i + 1}"
+                    ))
+                elif self.config.magnets_shape == MagnetsShape.RECTANGULAR:
+                    magnet = magnet_base.translated(Vector(0, self.config.magnets_position_radius))
+                    magnet = magnet.rotated(center = self.board_center, angle = 360.0 * i / self.config.n_magnets + self.config.rotation)
+                    magnet.draw_svg(
+                        drawing = drawing,
+                        parent = svg_layers['magnets'],
+                        color = self.config.magnets_color,
+                        opacity = self.config.magnets_opacity,
+                        line_width = self.config.magnets_line_width,
+                        dashes = self.config.magnets_dashes,
+                        closed = True,
+                        label = f"Magnet_{i + 1}",
+                    )
 
         # Add the groups to the final output file
         for layer_id in svg_layers_ids:
@@ -2447,11 +2474,30 @@ class PCB:
 
         # Draw the magnets
         if self.config.draw_magnets:
-            for i in range(self.config.n_magnets):
-                center = Point.polar(360.0 * i / self.config.n_magnets, self.config.magnets_position_radius)
-                kicadpcb.gr_circle(
-                    center = center,
-                    radius = self.config.magnets_diameter / 2.0,
-                    width = self.config.magnets_line_width,
-                    layer = 'magnets',
+            if self.config.magnets_shape == MagnetsShape.RECTANGULAR:
+                magnet_base_path = Path(Point(-self.config.magnets_width / 2, self.config.magnets_height / 2))
+                magnet_base_path.append_segment(Point(self.config.magnets_width / 2, self.config.magnets_height / 2))
+                magnet_base_path.append_segment(Point(self.config.magnets_width / 2, -self.config.magnets_height / 2))
+                magnet_base_path.append_segment(Point(-self.config.magnets_width / 2, -self.config.magnets_height / 2))
+                magnet_base = Polygon(
+                    path = magnet_base_path,
+                    arcs_discretization_length = self.config.arcs_discretization_length,
+                    arcs_discretization_angle = self.config.arcs_discretization_angle,
                 )
+            for i in range(self.config.n_magnets):
+                if self.config.magnets_shape == MagnetsShape.ROUND:
+                    center = Point.polar(360.0 * i / self.config.n_magnets, self.config.magnets_position_radius)
+                    kicadpcb.gr_circle(
+                        center = center,
+                        radius = self.config.magnets_width / 2.0,
+                        width = self.config.magnets_line_width,
+                        layer = 'magnets',
+                    )
+                elif self.config.magnets_shape == MagnetsShape.RECTANGULAR:
+                    magnet = magnet_base.translated(Vector(0, self.config.magnets_position_radius))
+                    magnet = magnet.rotated(center = self.board_center, angle = 360.0 * i / self.config.n_magnets + self.config.rotation)
+                    kicadpcb.gr_poly(
+                        points = magnet.discretized_points,
+                        layer = 'magnets',
+                        fill = False,
+                    )
