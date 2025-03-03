@@ -804,9 +804,14 @@ class Coil:
             p1 = element.p2
         return resistance
     
-    def compute_polygon(self):
+    def compute_polygon(self, arcs_discretization_length: float, arcs_discretization_angle: float):
         """Compute the polygon of the path of this Coil"""
-        self.polygon = self.path.stroke(cap_style=CapStyle.ROUND, join_style=JoinStyle.ROUND)
+        self.polygon = self.path.stroke(
+            cap_style=CapStyle.ROUND,
+            join_style=JoinStyle.ROUND,
+            arcs_discretization_length=arcs_discretization_length,
+            arcs_discretization_angle=arcs_discretization_angle,
+        )
 
     def copy(self) -> Self:
         """Create a copy of this Coil"""
@@ -891,7 +896,7 @@ class Coil:
                 )
         return self
     
-    def draw_kicad(self, kicadpcb: KicadPCB, layer: str, geometry: TracesGeometry, arcs_discretization_length: float, arcs_discretization_angle: float) -> Self:
+    def draw_kicad(self, kicadpcb: KicadPCB, layer: str, geometry: TracesGeometry) -> Self:
         """Draw this Coil on the given Kicad board"""
 
         match geometry:
@@ -907,8 +912,6 @@ class Coil:
                 self.polygon.draw_kicad(
                     kicadpcb = kicadpcb,
                     layer = layer,
-                    arcs_discretization_length = arcs_discretization_length,
-                    arcs_discretization_angle = arcs_discretization_angle,
                 )
         return self
     
@@ -1009,9 +1012,14 @@ class Link:
             p1 = element.p2
         return resistance
     
-    def compute_polygon(self):
+    def compute_polygon(self, arcs_discretization_length: float, arcs_discretization_angle: float):
         """Calculate the polygon path of this Link"""
-        self.polygon = self.path.stroke(cap_style=CapStyle.ROUND, join_style=JoinStyle.ROUND)
+        self.polygon = self.path.stroke(
+            cap_style=CapStyle.ROUND,
+            join_style=JoinStyle.ROUND,
+            arcs_discretization_length=arcs_discretization_length,
+            arcs_discretization_angle=arcs_discretization_angle,
+        )
     
     def copy(self) -> Self:
         """Create a copy of this Link"""
@@ -1094,7 +1102,7 @@ class Link:
                 )
         return self
     
-    def draw_kicad(self, kicadpcb: KicadPCB, geometry: TracesGeometry, arcs_discretization_length: float, arcs_discretization_angle: float) -> Self:
+    def draw_kicad(self, kicadpcb: KicadPCB, geometry: TracesGeometry) -> Self:
         """Draw this Link on the given Kicad board"""
 
         match geometry:
@@ -1106,12 +1114,10 @@ class Link:
                 )
             case TracesGeometry.POLYGONS:
                 if self.polygon is None:
-                    raise ValueError("The polygon of this coil has not been calculated")
+                    raise ValueError("The polygon of this link has not been calculated")
                 self.polygon.draw_kicad(
                     kicadpcb = kicadpcb,
                     layer = self.layer,
-                    arcs_discretization_length = arcs_discretization_length,
-                    arcs_discretization_angle = arcs_discretization_angle,
                 )
         return self
 
@@ -1850,7 +1856,10 @@ class PCB:
                 construction_geometry = construction_geometry,
             )
             if config.traces_geometry == TracesGeometry.POLYGONS:
-                coil_even.compute_polygon()
+                coil_even.compute_polygon(
+                    arcs_discretization_length = config.arcs_discretization_length,
+                    arcs_discretization_angle = config.arcs_discretization_angle,
+                )
             if optimise_outer_vias or optimise_inner_vias:
                 # If one of these flags is set, the odd coils are not exactly the same as the even coils mirrored
                 # around the Y axis because of the position of the outside via, so we need to generate a new coil
@@ -1875,7 +1884,10 @@ class PCB:
                     construction_geometry = construction_geometry,
                 ).mirrored_y()
                 if config.traces_geometry == TracesGeometry.POLYGONS:
-                    coil_odd.compute_polygon()
+                    coil_odd.compute_polygon(
+                        arcs_discretization_length = config.arcs_discretization_length,
+                        arcs_discretization_angle = config.arcs_discretization_angle,
+                    )
             else:
                 # In other cases, the odd coils are simply the mirror of the even coils, there is no need
                 # to generate a full new path as this is a relatively expensive operation.
@@ -1970,7 +1982,10 @@ class PCB:
                                 label = label,
                             )
                             if config.traces_geometry == TracesGeometry.POLYGONS:
-                                link.compute_polygon()
+                                link.compute_polygon(
+                                    arcs_discretization_length = config.arcs_discretization_length,
+                                    arcs_discretization_angle = config.arcs_discretization_angle,
+                                )
                             links.append(link)
                         else:
                             path = base_path_outer.rotated(board_center, angle)
@@ -1983,7 +1998,10 @@ class PCB:
                                 label = label,
                             )
                             if config.traces_geometry == TracesGeometry.POLYGONS:
-                                link.compute_polygon()
+                                link.compute_polygon(
+                                    arcs_discretization_length = config.arcs_discretization_length,
+                                    arcs_discretization_angle = config.arcs_discretization_angle,
+                                )
                             links.append(link)
                             via1_label = f"Link_via_{coil_names[slot_pair * config.n_phases + phase]}"
                             via1 = Via(via_pos_1, config.via_diameter, config.via_drill_diameter, phase=phase, label=via1_label).rotated(board_center, angle)
@@ -2060,7 +2078,10 @@ class PCB:
                     label = label,
                 )
                 if config.traces_geometry == TracesGeometry.POLYGONS:
-                    link.compute_polygon()
+                    link.compute_polygon(
+                        arcs_discretization_length = config.arcs_discretization_length,
+                        arcs_discretization_angle = config.arcs_discretization_angle,
+                    )
                 links.append(link)
 
         # Connect the terminals and linking vias on the first layer
@@ -2076,19 +2097,28 @@ class PCB:
                     ):
                     coils[layer_id][i].prepend_segment(terminal_base.rotated(board_center, 360.0 * i / config.n_coils).center)
                     if config.traces_geometry == TracesGeometry.POLYGONS:
-                        coils[layer_id][i].compute_polygon()
+                        coils[layer_id][i].compute_polygon(
+                            arcs_discretization_length = config.arcs_discretization_length,
+                            arcs_discretization_angle = config.arcs_discretization_angle,
+                        )
                 elif config.link_series_coils and link_vias and config.n_coils_per_phase >= 3 and i >= config.n_phases and (config.n_coils_per_phase % 2 != 0 or i < (config.n_coils_per_phase - 1) * config.n_phases):
                     # When linking series coils, connect the start of the coil to the outer linking via for every coil starting at the second coil of each phase,
                     # except for the last coil of each phase if the number of coils per phase is odd
                     radius = board_center.distance(link_vias[0].center)
                     coils[layer_id][i].prepend_segment(Point.polar(0, radius).rotated(board_center, 360.0 * i / config.n_coils))
                     if config.traces_geometry == TracesGeometry.POLYGONS:
-                        coils[layer_id][i].compute_polygon()
+                        coils[layer_id][i].compute_polygon(
+                            arcs_discretization_length = config.arcs_discretization_length,
+                            arcs_discretization_angle = config.arcs_discretization_angle,
+                        )
                 elif link_com_connection_point and config.n_coils_per_phase % 2 == 0 and config.link_com and i >= config.n_coils - config.n_phases:
                     # When linking the COM point on the outside of the board, connect the start of the coil to the COM link
                     coils[layer_id][i].prepend_segment(link_com_connection_point.rotated(board_center, 360.0 * i / config.n_coils))
                     if config.traces_geometry == TracesGeometry.POLYGONS:
-                        coils[layer_id][i].compute_polygon()
+                        coils[layer_id][i].compute_polygon(
+                            arcs_discretization_length = config.arcs_discretization_length,
+                            arcs_discretization_angle = config.arcs_discretization_angle,
+                        )
 
         # Print the names of the coils on the top silkscreen
         if config.draw_coil_names:
@@ -2371,8 +2401,6 @@ class PCB:
                         kicadpcb = kicadpcb,
                         layer = layer_id,
                         geometry = self.config.traces_geometry,
-                        arcs_discretization_length = self.config.arcs_discretization_length,
-                        arcs_discretization_angle = self.config.arcs_discretization_angle,
                     )
 
         # Draw the link traces
@@ -2381,8 +2409,6 @@ class PCB:
                 link.draw_kicad(
                     kicadpcb = kicadpcb,
                     geometry = self.config.traces_geometry,
-                    arcs_discretization_length = self.config.arcs_discretization_length,
-                    arcs_discretization_angle = self.config.arcs_discretization_angle,
                 )
 
         # Draw the vias

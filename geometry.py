@@ -2554,7 +2554,7 @@ class Path(DrawableObject):
 
         return offset_path
 
-    def stroke(self, cap_style: CapStyle = CapStyle.FLAT, join_style = JoinStyle.MITRE, mitre_limit = None) -> "Polygon":
+    def stroke(self, cap_style: CapStyle = CapStyle.FLAT, join_style = JoinStyle.MITRE, mitre_limit = None, arcs_discretization_length: float = 1, arcs_discretization_angle: float = 1) -> "Polygon":
         """Return a Polygon that represents the outline of the stroke of this Path"""
         if not self.elements:
             # Path is empty
@@ -2588,7 +2588,7 @@ class Path(DrawableObject):
                 path_left.prepend_arc(path_right.first_point(), radius=self.first_point_width()/2, anticlockwise=False)
                 path_left.append_arc(path_right.last_point(), radius=self.last_point_width()/2, anticlockwise=False)
         polygonPath = path_left.append_path(path_right.reversed())
-        return Polygon(polygonPath)
+        return Polygon(polygonPath, arcs_discretization_length=arcs_discretization_length, arcs_discretization_angle=arcs_discretization_angle)
     
     def _export(self):
         # Debug function that returns the Python code that would create the same Path
@@ -2652,37 +2652,67 @@ class Path(DrawableObject):
 class Polygon(DrawableObject):
     """A Polygon represented by a closed Path"""
 
-    def __init__(self, path: Path):
+    def __init__(self, path: Path, arcs_discretization_length: float, arcs_discretization_angle: float):
         self.path = path
+        self.discretized_points = None
+        if arcs_discretization_length and arcs_discretization_angle:
+            points = [self.path.start_point]
+            for element in self.path.elements_geometries():
+                match element:
+                    case Segment():
+                        points.append(element.end_point())
+                    case Arc():
+                        points.extend(element.discretize(segment_length=arcs_discretization_length, max_deviation=arcs_discretization_angle)[1:])
+            self.discretized_points = points
     
     def copy(self) -> Self:
         """Create a copy of this Polygon"""
-        return Polygon(
+        polygon = Polygon(
             path = self.path,
+            arcs_discretization_length = None,
+            arcs_discretization_angle = None,
         )
+        polygon.discretized_points = self.discretized_points
+        return polygon
     
     def translated(self, vector: Vector) -> Self:
         """Create a copy of this Polygon translated according to the given vector"""
         polygon = self.copy()
         polygon.path = polygon.path.translated(vector)
+        points = []
+        for point in polygon.discretized_points:
+            points.append(point.translated(vector))
+        polygon.discretized_points = points
         return polygon
 
     def rotated(self, center: Self, angle: float) -> Self:
         """Create a copy of this Polygon rotated around the given center point by the given angle"""
         polygon = self.copy()
         polygon.path = polygon.path.rotated(center, angle)
+        points = []
+        for point in polygon.discretized_points:
+            points.append(point.rotated(center, angle))
+        polygon.discretized_points = points
         return polygon
     
     def mirrored_x(self) -> Self:
         """Create a copy of this Polygon mirrored about the X axis"""
         polygon = self.copy()
         polygon.path = polygon.path.mirrored_x()
+        points = []
+        for point in polygon.discretized_points:
+            points.append(point.mirrored_x())
+        polygon.discretized_points = points
         return polygon
     
     def mirrored_y(self) -> Self:
         """Create a copy of this Polygon mirrored about the Y axis"""
         polygon = self.copy()
         polygon.path = polygon.path.mirrored_y()
+        points = []
+        for point in polygon.discretized_points:
+            points.append(point.mirrored_y())
+        polygon.discretized_points = points
         return polygon
     
     def draw_svg(
@@ -2716,17 +2746,10 @@ class Polygon(DrawableObject):
         ))
         return self
     
-    def draw_kicad(self, kicadpcb: "KicadPCB", layer: str, arcs_discretization_length: float = 1, arcs_discretization_angle: float = 1) -> Self:
+    def draw_kicad(self, kicadpcb: "KicadPCB", layer: str) -> Self:
         """Draw this Polygon on the given Kicad board"""
-        points = [self.path.start_point]
-        for element in self.path.elements_geometries():
-            match element:
-                case Segment():
-                    points.append(element.end_point())
-                case Arc():
-                    points.extend(element.discretize(segment_length=arcs_discretization_length, max_deviation=arcs_discretization_angle)[1:])
         kicadpcb.gr_poly(
-            points = points,
+            points = self.discretized_points,
             layer = layer,
             fill = True,
         )
