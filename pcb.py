@@ -1725,12 +1725,12 @@ class PCB:
             Point.polar(-config.coil_angle/2.0, config.coils_outer_radius),
             Point.polar(config.coil_angle/2.0, config.coils_outer_radius),
             config.coils_outer_radius
-        ).offset(-config.via_diameter / 2.0 + config.outer_vias_offset)
+        ).offset(config.via_diameter / 2.0 + config.outer_vias_offset)
         inner_arc = Arc(
             Point.polar(-config.coil_angle/2.0, config.coils_inner_radius),
             Point.polar(config.coil_angle/2.0, config.coils_inner_radius),
             config.coils_inner_radius
-        ).offset(config.via_diameter / 2.0 - config.inner_vias_offset)
+        ).offset(-config.via_diameter / 2.0 - config.inner_vias_offset)
         if optimise_outer_vias:
             # If this flag is set, there is only one outer via used, so place it exactly
             # on the line between two coils to optimize space
