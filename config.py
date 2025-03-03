@@ -759,7 +759,7 @@ class Config:
         if self.magnets_shape == MagnetsShape.ROUND:
             # Set the magnets diameter to the height of the coil by default, while making sure that they are not overlapping, and not larger than the coils
             max_magnets_width = round((Circle(Point.origin(), self.magnets_position_radius).perimeter() / self.n_magnets) * 0.9, 1)
-            coil_width = Circle(Point.origin(), self.coils_middle_radius).perimeter() / self.n_coils
+            coil_width = round(Circle(Point.origin(), self.coils_middle_radius).perimeter() / self.n_coils, 1)
             max_magnets_width = min(coil_width, max_magnets_width)
             if self.magnets_width == 'auto':
                 self.magnets_width = min(round(self.coils_outer_radius - self.coils_inner_radius, 1), max_magnets_width)
