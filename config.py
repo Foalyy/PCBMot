@@ -772,7 +772,7 @@ class Config:
             if self.magnets_width == 'auto':
                 self.magnets_width = min(round(self.coils_outer_radius - self.coils_inner_radius, 1), max_magnets_width)
             elif self.magnets_width > max_magnets_width:
-                print(f"Warning : the specified magnet diameter of {magnets_width}mm is too large")
+                print(f"Warning : the specified magnet diameter of {self.magnets_width}mm is too large")
             self.magnets_height = self.magnets_width
         elif self.magnets_shape == MagnetsShape.RECTANGULAR:
             # Set the height of the magnets based on the height of the coils, and the width based on the inner diameter of the coils
