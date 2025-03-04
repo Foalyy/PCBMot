@@ -366,7 +366,7 @@ class Config:
             'type': float,
             'signed': True,
             'zero': True,
-            'default': 0.0,
+            'default': 0.3,
         },
 
         # Vias
@@ -447,7 +447,7 @@ class Config:
             'json': 'terminals.terminal_offset',
             'type': float,
             'zero': True,
-            'default': 0.0,
+            'default': 0.3,
         },
         {
             'name': 'generate_com_terminal',
@@ -483,6 +483,13 @@ class Config:
         {
             'name': 'magnets_position_radius',
             'json': 'magnets.magnets_position_radius',
+            'type': float,
+            'auto': True,
+            'default': 'auto',
+        },
+        {
+            'name': 'rotor_diameter',
+            'json': 'magnets.rotor_diameter',
             'type': float,
             'auto': True,
             'default': 'auto',
@@ -751,11 +758,12 @@ class Config:
         
         # Center the magnets with the coils by default
         if self.magnets_position_radius == 'auto':
-            self.magnets_position_radius = self.coils_middle_radius
+            self.magnets_position_radius = round(self.coils_middle_radius, 1)
         
         # Put 2 magnets for each coil in series by default, as required by the most common motor configuration
         self.n_magnets = 2 * self.n_coils_per_phase
 
+        # Magnets size
         if self.magnets_shape == MagnetsShape.ROUND:
             # Set the magnets diameter to the height of the coil by default, while making sure that they are not overlapping, and not larger than the coils
             max_magnets_width = round((Circle(Point.origin(), self.magnets_position_radius).perimeter() / self.n_magnets) * 0.9, 1)
@@ -772,7 +780,13 @@ class Config:
                 self.magnets_height = round(self.coils_outer_radius - self.coils_inner_radius, 1)
             if self.magnets_width == 'auto':
                 self.magnets_width = round((2 * math.pi * self.coils_inner_radius / self.n_magnets) * 0.9, 1)
-            
+        
+        # Rotor diameter
+        if self.rotor_diameter == 'auto':
+            if self.magnets_shape == MagnetsShape.ROUND:
+                self.rotor_diameter = round(2 * (self.magnets_position_radius + self.magnets_width / 2) * 1.04, 1)
+            elif self.magnets_shape == MagnetsShape.RECTANGULAR:
+                self.rotor_diameter = round(2 * math.hypot(self.magnets_position_radius + self.magnets_height / 2, self.magnets_width / 2) * 1.04, 1)
         
         # No board rotation by default
         if self.rotation == 'auto':

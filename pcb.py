@@ -2034,7 +2034,8 @@ class PCB:
                 if config.terminal_type == TerminalType.CASTELLATED:
                     trace_center_radius = max(intermediate_circle_radius, outer_vias_radius) + config.com_link_offset
                 else:
-                    trace_center_radius = max(terminal_circle_radius, intermediate_circle_radius, outer_vias_radius) + config.com_link_offset
+                    # trace_center_radius = max(terminal_circle_radius, intermediate_circle_radius, outer_vias_radius) + config.com_link_offset
+                    trace_center_radius = outer_vias_radius + config.com_link_offset
                 circle_intermediate = Circle(board_center, intermediate_circle_radius)
                 circle_trace = Circle(board_center, trace_center_radius)
                 line1 = Line.from_two_points(board_center, connection_point_1)
@@ -2379,6 +2380,7 @@ class PCB:
 
         # Draw the magnets
         if self.config.draw_magnets and (only_layer is None or only_layer == 'magnets'):
+            # Magnets
             if self.config.magnets_shape == MagnetsShape.RECTANGULAR:
                 magnet_base = Path(Point(-self.config.magnets_width / 2, self.config.magnets_height / 2))
                 magnet_base.append_segment(Point(self.config.magnets_width / 2, self.config.magnets_height / 2))
@@ -2409,6 +2411,17 @@ class PCB:
                         closed = True,
                         label = f"Magnet_{i + 1}",
                     )
+            
+            # Rotor
+            svg_layers['magnets'].add(drawing.circle(
+                center = self.board_center.to_viewport().as_tuple(),
+                r = self.config.rotor_diameter / 2.0,
+                stroke = self.config.magnets_color,
+                stroke_width = self.config.magnets_line_width / 2,
+                stroke_opacity = self.config.magnets_opacity,
+                stroke_dasharray = self.config.magnets_dashes,
+                label = f"Rotor_outline"
+            ))
 
         # Add the groups to the final output file
         for layer_id in svg_layers_ids:
@@ -2474,6 +2487,7 @@ class PCB:
 
         # Draw the magnets
         if self.config.draw_magnets:
+            # Magnets
             if self.config.magnets_shape == MagnetsShape.RECTANGULAR:
                 magnet_base_path = Path(Point(-self.config.magnets_width / 2, self.config.magnets_height / 2))
                 magnet_base_path.append_segment(Point(self.config.magnets_width / 2, self.config.magnets_height / 2))
@@ -2501,3 +2515,11 @@ class PCB:
                         layer = 'magnets',
                         fill = False,
                     )
+            
+            # Rotor
+            kicadpcb.gr_circle(
+                center = self.board_center,
+                radius = self.config.rotor_diameter / 2.0,
+                width = self.config.magnets_line_width / 2,
+                layer = 'magnets',
+            )
